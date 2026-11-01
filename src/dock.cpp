@@ -42,6 +42,9 @@ protected:
 constexpr auto dockStyle=R"QSS(
 QWidget {background:transparent;color:#eaf2ff;font-family:'Segoe UI';font-size:11px;}
 QWidget#donationsRoot {background:#080f19;}
+QWidget#homePage, QWidget#settingsPage, QWidget#feedList, QWidget#settingsContent,
+QStackedWidget, QScrollArea, QScrollArea QWidget#qt_scrollarea_viewport {background:#080f19;}
+QLabel {background:transparent;}
 QFrame#header {background:#080f19;border-bottom:1px solid #2c4059;}
 QFrame#card {background:#0c1725;border:1px solid #30465e;border-radius:7px;}
 QLabel#title {font-size:16px;font-weight:700;color:#f7fbff;}
@@ -85,7 +88,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* settings=new QPushButton(QString::fromUtf8("⚙"));settings->setToolTip(QString::fromUtf8("Настройки"));
     settings->setFixedSize(28,26);headerRow->addWidget(settings);root->addWidget(header);
     pages_=new QStackedWidget;root->addWidget(pages_,1);
-    auto* home=new QWidget;auto* homeLayout=new QVBoxLayout(home);
+    auto* home=new QWidget;home->setObjectName("homePage");auto* homeLayout=new QVBoxLayout(home);
     homeLayout->setContentsMargins(7,8,7,6);homeLayout->setSpacing(7);
     QVBoxLayout* summaryLayout=nullptr;auto* summary=card(&summaryLayout);
     summaryLayout->addWidget(label(QString::fromUtf8("За этот запуск OBS"),"muted"));
@@ -93,7 +96,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     homeLayout->addWidget(summary);
     auto* heading=label(QString::fromUtf8("Последние донаты"),"section");homeLayout->addWidget(heading);
     auto* scroll=new QScrollArea;scroll->setWidgetResizable(true);
-    feedList_=new QWidget;feedLayout_=new QVBoxLayout(feedList_);
+    feedList_=new QWidget;feedList_->setObjectName("feedList");feedLayout_=new QVBoxLayout(feedList_);
     feedLayout_->setContentsMargins(0,0,0,0);feedLayout_->setSpacing(6);
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
@@ -102,12 +105,12 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
-    auto* settingsPage=new QWidget;auto* settingsOuter=new QVBoxLayout(settingsPage);
+    auto* settingsPage=new QWidget;settingsPage->setObjectName("settingsPage");auto* settingsOuter=new QVBoxLayout(settingsPage);
     settingsOuter->setContentsMargins(7,8,7,7);settingsOuter->setSpacing(8);
     auto* back=new QPushButton(QString::fromUtf8("← Назад к донатам"));
     settingsOuter->addWidget(back);
     auto* settingsScroll=new QScrollArea;settingsScroll->setWidgetResizable(true);
-    auto* settingsContent=new QWidget;auto* settingsLayout=new QVBoxLayout(settingsContent);
+    auto* settingsContent=new QWidget;settingsContent->setObjectName("settingsContent");auto* settingsLayout=new QVBoxLayout(settingsContent);
     settingsLayout->setContentsMargins(0,0,0,0);settingsLayout->setSpacing(8);
     QVBoxLayout* daLayout=nullptr;settingsLayout->addWidget(card(&daLayout));
     daLayout->addWidget(label("DonationAlerts","section"));
