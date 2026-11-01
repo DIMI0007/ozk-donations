@@ -29,6 +29,7 @@ jobs:
           if (!(Test-Path package/ozk-donations/ozk-donations.dll)) { throw 'OBS plugin DLL missing' }
           if (!(Test-Path package/ozk-donations/data/qt-plugins/tls/qschannelbackend.dll)) { throw 'TLS backend missing' }
           Copy-Item README.md package/README.md
+          Copy-Item LICENSE package/LICENSE
           Compress-Archive -Path package/* -DestinationPath OZK-Donations-0.1.0-OBS33-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
