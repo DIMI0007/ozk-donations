@@ -31,7 +31,6 @@ private:
     QStackedWidget* pages_=nullptr;
     QWidget* feedList_=nullptr;
     QVBoxLayout* feedLayout_=nullptr;
-    QLabel* empty_=nullptr;
     QLabel* total_=nullptr;
     QLabel* daStatus_=nullptr;
     QLabel* dpStatus_=nullptr;

@@ -8,6 +8,7 @@
 #include <QJsonObject>
 #include <QLabel>
 #include <QPixmap>
+#include <QPainter>
 #include <QLineEdit>
 #include <QNetworkReply>
 #include <QNetworkRequest>
@@ -21,7 +22,24 @@
 #include <QMap>
 
 namespace {
-constexpr auto style=R"QSS(
+class OzkLogo final : public QWidget {
+public:
+    OzkLogo(){setFixedSize(28,28);setToolTip("OZK StreamKit");}
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(Qt::NoPen);p.setBrush(QColor("#073a2e"));
+        p.drawRoundedRect(rect().adjusted(1,1,-1,-1),7,7);
+        p.setPen(QPen(QColor("#00e59d"),2.2,Qt::SolidLine,Qt::RoundCap));
+        p.setBrush(QColor("#00e59d"));p.drawEllipse(QPointF(14,14),2.6,2.6);
+        p.setBrush(Qt::NoBrush);
+        p.drawArc(QRectF(8,7,12,14),120*16,120*16);
+        p.drawArc(QRectF(8,7,12,14),300*16,120*16);
+        p.drawArc(QRectF(4,4,20,20),120*16,120*16);
+        p.drawArc(QRectF(4,4,20,20),300*16,120*16);
+    }
+};
+constexpr auto dockStyle=R"QSS(
 QWidget {background:transparent;color:#eaf2ff;font-family:'Segoe UI';font-size:11px;}
 QWidget#donationsRoot {background:#080f19;}
 QFrame#header {background:#080f19;border-bottom:1px solid #2c4059;}
@@ -57,13 +75,12 @@ QString sanitized(QString v,int limit=600) {
 }
 
 DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_(this) {
-    setObjectName("donationsRoot");setStyleSheet(QString::fromUtf8(style));
+    setObjectName("donationsRoot");setStyleSheet(QString::fromUtf8(dockStyle));
     setMinimumWidth(260);ownPath_=ownSettingsPath();notifyPath_=notifySettingsPath();
     auto* root=new QVBoxLayout(this);root->setContentsMargins(0,0,0,0);root->setSpacing(0);
     auto* header=new QFrame;header->setObjectName("header");
     auto* headerRow=new QHBoxLayout(header);headerRow->setContentsMargins(8,7,8,7);
-    auto* icon=label(QString::fromUtf8("◉"));
-    icon->setStyleSheet("color:#00dda6;font-size:22px;font-weight:bold;");headerRow->addWidget(icon);
+    headerRow->addWidget(new OzkLogo);
     headerRow->addWidget(label("OZK Donations","title"));headerRow->addStretch();
     auto* settings=new QPushButton(QString::fromUtf8("⚙"));settings->setToolTip(QString::fromUtf8("Настройки"));
     settings->setFixedSize(28,26);headerRow->addWidget(settings);root->addWidget(header);
@@ -78,8 +95,8 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* scroll=new QScrollArea;scroll->setWidgetResizable(true);
     feedList_=new QWidget;feedLayout_=new QVBoxLayout(feedList_);
     feedLayout_->setContentsMargins(0,0,0,0);feedLayout_->setSpacing(6);
-    empty_=label(QString::fromUtf8("Ждём первый донат"),"muted");
-    empty_->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty_);feedLayout_->addStretch();
+    auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
+    empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
     auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.1.0"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
