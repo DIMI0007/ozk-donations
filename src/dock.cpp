@@ -226,7 +226,10 @@ void DonationsDock::render() {
     dpStatus_->setText(QString::fromUtf8("Состояние: ")+(credentials_.dpEnabled?feed_.dpStatus():QString::fromUtf8("Выключен"))+
         (credentials_.dpFromNotify?QString::fromUtf8(" · ключ из OZK Notify"):QString()));
     // A connected account shows the feed directly. No connection cards on the main page.
-    const auto& entries=feed_.entries();
+    QVector<DonationEntry> entries;
+    for(const auto& entry:feed_.entries())
+        if((entry.service=="DonationAlerts"&&credentials_.daEnabled)||
+           (entry.service=="DonatePay"&&credentials_.dpEnabled))entries.append(entry);
     while(feedLayout_->count()>0){auto* item=feedLayout_->takeAt(0);delete item->widget();delete item;}
     if(entries.isEmpty()){
         const QString message=feed_.hasAccounts()?QString::fromUtf8("Пока нет донатов за этот запуск OBS"):
