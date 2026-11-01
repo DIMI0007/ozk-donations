@@ -1,0 +1,55 @@
+#pragma once
+#include "credentials.hpp"
+#include <QObject>
+#include <QDateTime>
+#include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QSet>
+#include <QTimer>
+#include <QVector>
+#include <QWebSocket>
+
+struct DonationEntry {
+    QString service,id,donor,message,currency;
+    double amount=0;
+    QDateTime at;
+    bool valid() const {return !service.isEmpty()&&!id.isEmpty()&&amount>0&&
+                        !currency.isEmpty();}
+    bool session=true;
+};
+DonationEntry parseDA(const QJsonObject& packet);
+DonationEntry parseDP(const QJsonObject& packet);
+
+class DonationFeed : public QObject {
+    Q_OBJECT
+public:
+    explicit DonationFeed(QObject* parent=nullptr);
+    void configure(const DonationCredentials& c);
+    void stop();
+    const QVector<DonationEntry>& entries() const {return entries_;}
+    QString daStatus() const {return daStatus_;}
+    QString dpStatus() const {return dpStatus_;}
+    bool hasAccounts() const {return !daToken_.isEmpty()||!dpToken_.isEmpty();}
+Q_SIGNALS:
+    void updated();
+private:
+    void connectDA();
+    void subscribeDA(const QString& client);
+    void receiveDA(const QString& text);
+    void retryDA();
+    void pollDP();
+    void add(const DonationEntry& entry);
+    void setStatus(QString& target,const QString& status);
+    QNetworkAccessManager http_;
+    QWebSocket socket_;
+    QTimer daRetry_,dpTimer_;
+    QString daToken_,dpToken_,daChannel_,daSocketToken_;
+    QString daStatus_=QString::fromUtf8("Не подключён");
+    QString dpStatus_=QString::fromUtf8("Не подключён");
+    QVector<DonationEntry> entries_;
+    QSet<QString> seen_;
+    quint64 daEpoch_=0,dpEpoch_=0;
+    int daFailures_=0,dpFailures_=0;
+    bool closing_=false,resettingSocket_=false;
+    bool dpPrimed_=false;
+};

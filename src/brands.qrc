@@ -1,0 +1,4 @@
+<RCC><qresource prefix="/ozk-donations/brands">
+  <file alias="donationalerts.png">../data/brands/donationalerts.png</file>
+  <file alias="donatepay.png">../data/brands/donatepay.png</file>
+</qresource></RCC>
