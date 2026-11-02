@@ -89,7 +89,7 @@ bool YouTubePlayer::play(const QString& videoId) {
         setStatus(QString::fromUtf8("Не удалось открыть плеер OBS."));return false;}
     browser_->allowAllPopups(false);
     videoLayout_->addWidget(browser_);
-    browser_->show();external_->hide();
+    browser_->show();external_->show();
     setStatus(QString::fromUtf8("Загрузка YouTube…"));return true;
 }
 void YouTubePlayer::stop() {
@@ -110,12 +110,15 @@ QByteArray YouTubePlayer::page() const {
 <script>
 const videoId="%1";const nonce="%2";
 function notify(kind){fetch('/event?nonce='+nonce+'&kind='+encodeURIComponent(kind),{cache:'no-store'}).catch(()=>{});}
+let playing=false;
 function onYouTubeIframeAPIReady(){
   new YT.Player('player',{width:'100%',height:'100%',videoId:videoId,
     playerVars:{playsinline:1,rel:0,origin:location.origin},
     events:{onReady:e=>{notify('ready');e.target.playVideo();},
-      onStateChange:e=>{if(e.data===YT.PlayerState.ENDED)notify('ended');},
+      onStateChange:e=>{if(e.data===YT.PlayerState.PLAYING){playing=true;notify('playing');}
+        if(e.data===YT.PlayerState.ENDED)notify('ended');},
       onError:e=>notify('error:'+e.data),onAutoplayBlocked:()=>notify('blocked')}});
+  setTimeout(()=>{if(!playing)notify('stalled');},12000);
 }
 </script><script src="https://www.youtube.com/iframe_api"></script>
 </head><body><div id="player"></div></body></html>)HTML").arg(videoId_,nonce_);
@@ -137,7 +140,9 @@ void YouTubePlayer::serve(QTcpSocket* socket,const QByteArray& requestBytes) {
         if(authorized&&target.path()=="/event"){
             const QString kind=query.queryItemValue("kind");
             if(kind=="ended")QTimer::singleShot(0,this,[this]{stop();Q_EMIT returnRequested();});
-            else if(kind=="ready")setStatus(QString::fromUtf8("Видео готово. Если звук не слышен, проверьте микшер OBS."));
+            else if(kind=="ready")setStatus(QString::fromUtf8("Плеер открыт. Ждём начала воспроизведения…"));
+            else if(kind=="playing")setStatus(QString::fromUtf8("Видео воспроизводится. Если звук не слышен, проверьте микшер OBS."));
+            else if(kind=="stalled")setStatus(QString::fromUtf8("Видео не началось. Если YouTube просит подтвердить вход, откройте ролик кнопкой выше."));
             else if(kind=="blocked")setStatus(QString::fromUtf8("Нажмите ▶ в плеере для воспроизведения."));
             else if(kind.startsWith("error:")){
                 setStatus(QString::fromUtf8("YouTube не разрешил воспроизвести это видео внутри OBS."));
