@@ -87,7 +87,7 @@ set_tests_properties(youtube-links PROPERTIES
 add_executable(ozk-donations-ui-preview tests/ui_preview.cpp
   src/dock.cpp src/dock.hpp src/feed.cpp src/feed.hpp src/credentials.cpp src/credentials.hpp
   src/donation_cache.cpp src/donation_cache.hpp src/youtube_links.cpp src/youtube_links.hpp
-  src/youtube_player.hpp src/brands.qrc)
+  src/youtube_player.hpp src/oauth_loopback.hpp src/brands.qrc)
 target_include_directories(ozk-donations-ui-preview PRIVATE src)
 target_link_libraries(ozk-donations-ui-preview PRIVATE
   Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets crypt32)
