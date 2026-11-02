@@ -1,5 +1,6 @@
 #include "feed.hpp"
 #include "credentials.hpp"
+#include "donation_cache.hpp"
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -14,6 +15,9 @@ int main(int argc,char** argv){
     const auto da=parseDA(QJsonObject{{"data",QJsonObject{{"id",42},{"username","Anna"},
         {"amount","150.00"},{"currency","RUB"},{"message","Спасибо!"}}}});
     assert(da.valid()&&da.id=="42"&&da.donor=="Anna"&&da.amount==150);
+    const auto historical=parseDA(QJsonObject{{"id",43},{"username","Anna"},
+        {"amount",150},{"currency","RUB"},{"created_at","2026-10-20 20:56:00"}});
+    assert(historical.valid()&&historical.at.date()==QDate(2026,10,20));
     const auto test=parseDA(QJsonObject{{"id",1},{"amount",100},{"currency","RUB"},{"is_test",true}});
     assert(!test.valid());
     const auto dp=parseDP(QJsonObject{{"id",77},{"what","Ivan"},{"sum",250},
@@ -44,9 +48,17 @@ int main(int argc,char** argv){
     assert(broken.open(QIODevice::WriteOnly|QIODevice::Truncate));
     broken.write(QJsonDocument(wrapped).toJson());broken.close();
     c=loadCredentials(own,notify);
-    assert(c.da=="notify-DA"&&c.dp=="notify-DP"&&c.daFromNotify&&c.dpFromNotify);
+    assert(c.da=="own-DA"&&c.dp=="notify-DP"&&!c.daFromNotify&&c.dpFromNotify);
     assert(saveServiceChoices(own,false,true));
     c=loadCredentials(own,notify);
-    assert(!c.daEnabled&&c.dpEnabled&&c.daFromNotify&&c.dpFromNotify);
+    assert(!c.daEnabled&&c.dpEnabled&&!c.daFromNotify&&c.dpFromNotify);
+    const QString cache=dir.filePath("own/donations-cache.bin");
+    DonationEntry cached=da;cached.at=QDateTime::currentDateTime();cached.session=false;
+    assert(saveDonationCache(cache,"own-DA","own-DP",{cached}));
+    QFile saved(cache);assert(saved.open(QIODevice::ReadOnly));
+    assert(!saved.readAll().contains("Anna"));saved.close();
+    const auto restored=loadDonationCache(cache,"own-DA","own-DP");
+    assert(restored.size()==1&&restored.first().donor=="Anna"&&!restored.first().session);
+    assert(loadDonationCache(cache,"different-account","own-DP").isEmpty());
     return 0;
 }

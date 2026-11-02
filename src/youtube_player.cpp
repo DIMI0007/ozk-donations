@@ -121,8 +121,8 @@ function onYouTubeIframeAPIReady(){
       onError:e=>notify('error:'+e.data),onAutoplayBlocked:()=>notify('blocked')}});
   setTimeout(()=>{if(!playing)notify('stalled');},12000);
 }
-</script><script src="https://www.youtube.com/iframe_api"></script>
-</head><body><iframe id="player" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe></body></html>)HTML").arg(videoId_,nonce_);
+</script></head><body><iframe id="player" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe>
+<script src="https://www.youtube.com/iframe_api"></script></body></html>)HTML").arg(videoId_,nonce_);
     return html.toUtf8();
 }
 void YouTubePlayer::serve(QTcpSocket* socket,const QByteArray& requestBytes) {

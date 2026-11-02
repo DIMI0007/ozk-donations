@@ -43,7 +43,8 @@ find_package(Qt6WebSockets 6.11.1 EXACT REQUIRED)
 
 add_library(${CMAKE_PROJECT_NAME} MODULE
   src/plugin.cpp src/dock.cpp src/dock.hpp src/feed.cpp src/feed.hpp
-  src/credentials.cpp src/credentials.hpp src/oauth_loopback.hpp src/brands.qrc
+  src/credentials.cpp src/credentials.hpp src/donation_cache.cpp src/donation_cache.hpp
+  src/oauth_loopback.hpp src/brands.qrc
   src/youtube_links.cpp src/youtube_links.hpp src/youtube_player.cpp src/youtube_player.hpp)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OBS::obs-frontend-api
@@ -60,7 +61,7 @@ find_file(_schannel_backend qschannelbackend.dll
 install(FILES "${_schannel_backend}" DESTINATION "${CMAKE_PROJECT_NAME}/data/qt-plugins/tls")
 
 enable_testing()
-add_executable(ozk-donations-tests tests/test_feed.cpp src/feed.cpp src/credentials.cpp)
+add_executable(ozk-donations-tests tests/test_feed.cpp src/feed.cpp src/credentials.cpp src/donation_cache.cpp)
 get_target_property(_obs_includes OBS::libobs INTERFACE_INCLUDE_DIRECTORIES)
 target_include_directories(ozk-donations-tests PRIVATE src ${_obs_includes})
 target_link_libraries(ozk-donations-tests PRIVATE Qt6::Core Qt6::Network Qt6::WebSockets crypt32)

@@ -5,6 +5,7 @@
 #include <QDesktopServices>
 #include <QCheckBox>
 #include <QFrame>
+#include <QFileInfo>
 #include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -82,6 +83,7 @@ QString sanitized(QString v,int limit=600) {
 DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_(this) {
     setObjectName("donationsRoot");setStyleSheet(QString::fromUtf8(dockStyle));
     setMinimumWidth(260);ownPath_=ownSettingsPath();notifyPath_=notifySettingsPath();
+    feed_.setCachePath(QFileInfo(ownPath_).dir().filePath("donations-cache.bin"));
     auto* root=new QVBoxLayout(this);root->setContentsMargins(0,0,0,0);root->setSpacing(0);
     auto* header=new QFrame;header->setObjectName("header");
     auto* headerRow=new QHBoxLayout(header);headerRow->setContentsMargins(8,7,8,7);
@@ -103,7 +105,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.2.0"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.3.0"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -119,9 +121,9 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     daEnabled_=new QCheckBox(QString::fromUtf8("Показывать донаты DonationAlerts"));
     daLayout->addWidget(daEnabled_);
     daStatus_=label({},"muted");daLayout->addWidget(daStatus_);
-    daHint_=label(QString::fromUtf8("Если аккаунт уже подключён в OZK Notify, входить повторно не нужно."),"muted");
+    daHint_=label(QString::fromUtf8("Если аккаунт уже подключён в OZK Notify, новые донаты видны без повторного входа. Для истории нужно отдельно разрешить чтение донатов."),"muted");
     daLayout->addWidget(daHint_);
-    auto* daLogin=new QPushButton(QString::fromUtf8("Войти в DonationAlerts"));daLayout->addWidget(daLogin);
+    daLogin_=new QPushButton(QString::fromUtf8("Разрешить историю DonationAlerts"));daLayout->addWidget(daLogin_);
     QVBoxLayout* dpLayout=nullptr;settingsLayout->addWidget(card(&dpLayout));
     dpLayout->addWidget(label("DonatePay","section"));
     dpEnabled_=new QCheckBox(QString::fromUtf8("Показывать донаты DonatePay"));
@@ -140,7 +142,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     connect(player_,&YouTubePlayer::returnRequested,this,[this]{pages_->setCurrentIndex(0);});
     connect(settings,&QPushButton::clicked,this,[this]{showSettings(true);});
     connect(back,&QPushButton::clicked,this,[this]{showSettings(false);});
-    connect(daLogin,&QPushButton::clicked,this,&DonationsDock::beginDALogin);
+    connect(daLogin_,&QPushButton::clicked,this,&DonationsDock::beginDALogin);
     connect(saveDP,&QPushButton::clicked,this,[this]{
         const QString key=dpKey_->text().trimmed();
         if(key.isEmpty()){settingsMessage_->setText(QString::fromUtf8("Введите ключ DonatePay."));return;}
@@ -222,7 +224,7 @@ void DonationsDock::beginDALogin() {
     QUrl url("https://www.donationalerts.com/oauth/authorize");QUrlQuery query;
     query.addQueryItem("client_id","22338");query.addQueryItem("redirect_uri",login_.redirect().toString());
     query.addQueryItem("response_type","token");
-    query.addQueryItem("scope","oauth-user-show oauth-donation-subscribe");
+    query.addQueryItem("scope","oauth-user-show oauth-donation-subscribe oauth-donation-index");
     query.addQueryItem("state",login_.state());url.setQuery(query);
     settingsMessage_->setText(QString::fromUtf8("Подтвердите вход в открывшемся браузере."));
     if(!QDesktopServices::openUrl(url)){
@@ -233,6 +235,15 @@ void DonationsDock::render() {
     if(closing_)return;
     daStatus_->setText(QString::fromUtf8("Состояние: ")+(credentials_.daEnabled?feed_.daStatus():QString::fromUtf8("Выключен"))+
         (credentials_.daFromNotify?QString::fromUtf8(" · вход через OZK Notify"):QString()));
+    if(feed_.daHistoryPermissionNeeded()&&credentials_.daEnabled)
+        daHint_->setText(QString::fromUtf8("Новые донаты приходят через OZK Notify. Для показа прошлых донатов нажмите «Разрешить историю DonationAlerts» и подтвердите доступ один раз."));
+    else if(credentials_.da.isEmpty())
+        daHint_->setText(QString::fromUtf8("Подключите DonationAlerts, чтобы видеть новые и прошлые донаты в одной ленте."));
+    else if(!credentials_.daFromNotify&&!credentials_.da.isEmpty())
+        daHint_->setText(QString::fromUtf8("История и новые донаты доступны через этот вход. OZK Notify можно использовать отдельно."));
+    else daHint_->setText(QString::fromUtf8("Новые донаты из OZK Notify видны без повторного входа. Для прошлых донатов нужен отдельный доступ."));
+    daLogin_->setText(credentials_.da.isEmpty()?QString::fromUtf8("Подключить DonationAlerts"):
+                      QString::fromUtf8("Разрешить историю DonationAlerts"));
     dpStatus_->setText(QString::fromUtf8("Состояние: ")+(credentials_.dpEnabled?feed_.dpStatus():QString::fromUtf8("Выключен"))+
         (credentials_.dpFromNotify?QString::fromUtf8(" · ключ из OZK Notify"):QString()));
     // A connected account shows the feed directly. No connection cards on the main page.
@@ -241,8 +252,13 @@ void DonationsDock::render() {
         if((entry.service=="DonationAlerts"&&credentials_.daEnabled)||
            (entry.service=="DonatePay"&&credentials_.dpEnabled))entries.append(entry);
     while(feedLayout_->count()>0){auto* item=feedLayout_->takeAt(0);delete item->widget();delete item;}
+    if(feed_.daHistoryPermissionNeeded()&&credentials_.daEnabled){
+        auto* hint=label(QString::fromUtf8("История DonationAlerts пока не разрешена. Откройте ⚙ и нажмите «Разрешить историю DonationAlerts»."),"muted");
+        feedLayout_->addWidget(hint);
+    }
     if(entries.isEmpty()){
-        const QString message=feed_.hasAccounts()?QString::fromUtf8("Пока нет донатов за этот запуск OBS"):
+        const QString message=feed_.loading()?QString::fromUtf8("Подгружаем последние донаты…"):
+             feed_.hasAccounts()?QString::fromUtf8("Последних донатов пока нет"):
              QString::fromUtf8("Подключите DonationAlerts или DonatePay в настройках ⚙");
         auto* placeholder=label(message,"muted");placeholder->setAlignment(Qt::AlignCenter);
         feedLayout_->addWidget(placeholder);

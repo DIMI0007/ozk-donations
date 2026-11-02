@@ -68,9 +68,9 @@ DonationCredentials loadCredentials(const QString& ownSettings,
     const auto notify=read(notifySettings).value("donations").toObject();
     const auto da=decode(notify.value("da_secret").toString());
     const auto dp=decode(notify.value("dp_secret").toString());
-    // Notify's current authorization takes precedence. A standalone key remains
-    // available if Notify is removed or the service is signed out there.
-    if(!da.isEmpty()){c.da=da;c.daFromNotify=true;}
+    // Donations' own DonationAlerts grant can include history-read permission.
+    // Notify's older grant remains a fallback for live events.
+    if(c.da.isEmpty()&&!da.isEmpty()){c.da=da;c.daFromNotify=true;}
     if(!dp.isEmpty()){c.dp=dp;c.dpFromNotify=true;}
     return c;
 }

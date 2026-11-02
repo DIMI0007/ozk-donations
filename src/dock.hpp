@@ -38,6 +38,7 @@ private:
     QLabel* daStatus_=nullptr;
     QLabel* dpStatus_=nullptr;
     QLabel* daHint_=nullptr;
+    QPushButton* daLogin_=nullptr;
     QLabel* dpHint_=nullptr;
     QLabel* settingsMessage_=nullptr;
     QLineEdit* dpKey_=nullptr;

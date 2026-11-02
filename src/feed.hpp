@@ -25,10 +25,15 @@ class DonationFeed : public QObject {
 public:
     explicit DonationFeed(QObject* parent=nullptr);
     void configure(const DonationCredentials& c);
+    void setCachePath(const QString& path) { cachePath_=path; }
     void stop();
     const QVector<DonationEntry>& entries() const {return entries_;}
     QString daStatus() const {return daStatus_;}
     QString dpStatus() const {return dpStatus_;}
+    bool daHistoryPermissionNeeded() const {return daHistoryPermissionNeeded_;}
+    bool loading() const {return hasAccounts()&&
+        ((!daToken_.isEmpty()&&daStatus_.contains(QString::fromUtf8("подключение"),Qt::CaseInsensitive))||
+         (!dpToken_.isEmpty()&&dpStatus_.contains(QString::fromUtf8("подключение"),Qt::CaseInsensitive)));}
     bool hasAccounts() const {return !daToken_.isEmpty()||!dpToken_.isEmpty();}
 Q_SIGNALS:
     void updated();
@@ -37,12 +42,14 @@ private:
     void subscribeDA(const QString& client);
     void receiveDA(const QString& text);
     void retryDA();
+    void fetchDAHistory();
     void pollDP();
+    void saveCache();
     void add(const DonationEntry& entry);
     void setStatus(QString& target,const QString& status);
     QNetworkAccessManager http_;
     QWebSocket socket_;
-    QTimer daRetry_,dpTimer_;
+    QTimer daRetry_,dpTimer_,cacheTimer_;
     QString daToken_,dpToken_,daChannel_,daSocketToken_;
     QString daStatus_=QString::fromUtf8("Не подключён");
     QString dpStatus_=QString::fromUtf8("Не подключён");
@@ -52,4 +59,7 @@ private:
     int daFailures_=0,dpFailures_=0;
     bool closing_=false,resettingSocket_=false;
     bool dpPrimed_=false;
+    bool daHistoryPermissionNeeded_=false;
+    bool daHistoryChecked_=false;
+    QString cachePath_;
 };

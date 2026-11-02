@@ -1,4 +1,5 @@
 #include "feed.hpp"
+#include "donation_cache.hpp"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
@@ -36,6 +37,7 @@ double amount(const QJsonValue& v) {
 QDateTime time(const QJsonObject& o) {
     const QString value=first(o,{"created_at","date","time"});
     auto date=QDateTime::fromString(value,Qt::ISODate);
+    if(!date.isValid())date=QDateTime::fromString(value,"yyyy-MM-dd HH:mm:ss");
     if(!date.isValid()&&o.value("created_at").isDouble())
         date=QDateTime::fromSecsSinceEpoch(qint64(o.value("created_at").toDouble()));
     return date.isValid()?date.toLocalTime():QDateTime::currentDateTime();
@@ -68,7 +70,9 @@ DonationEntry parseDP(const QJsonObject& packet) {
     return e;
 }
 DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
-    daRetry_.setSingleShot(true);dpTimer_.setSingleShot(true);
+    daRetry_.setSingleShot(true);dpTimer_.setSingleShot(true);cacheTimer_.setSingleShot(true);
+    cacheTimer_.setInterval(800);
+    connect(&cacheTimer_,&QTimer::timeout,this,&DonationFeed::saveCache);
     connect(&daRetry_,&QTimer::timeout,this,&DonationFeed::connectDA);
     connect(&dpTimer_,&QTimer::timeout,this,&DonationFeed::pollDP);
     connect(&socket_,&QWebSocket::connected,this,[this]{
@@ -87,9 +91,15 @@ void DonationFeed::setStatus(QString& target,const QString& value) {
 }
 void DonationFeed::configure(const DonationCredentials& c) {
     if(daToken_==c.da&&dpToken_==c.dp&&!closing_)return;
+    if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
     ++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
     daToken_=c.da;dpToken_=c.dp;closing_=false;daFailures_=dpFailures_=0;dpPrimed_=false;
+    daHistoryPermissionNeeded_=false;daHistoryChecked_=false;
+    entries_.clear();seen_.clear();
+    for(const auto& entry:loadDonationCache(cachePath_,daToken_,dpToken_)){
+        entries_.append(entry);seen_.insert(entry.service+":"+entry.id);
+    }
     setStatus(daStatus_,daToken_.isEmpty()?QString::fromUtf8("Не подключён"):QString::fromUtf8("Подключение…"));
     setStatus(dpStatus_,dpToken_.isEmpty()?QString::fromUtf8("Не подключён"):QString::fromUtf8("Подключение…"));
     if(!daToken_.isEmpty())connectDA();
@@ -97,17 +107,28 @@ void DonationFeed::configure(const DonationCredentials& c) {
     Q_EMIT updated();
 }
 void DonationFeed::stop() {
+    if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
     closing_=true;++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
 }
 void DonationFeed::add(const DonationEntry& entry) {
     if(!entry.valid())return;
     const QString key=entry.service+":"+entry.id;
-    if(seen_.contains(key))return;
+    if(seen_.contains(key)){
+        if(entry.session)for(auto& existing:entries_)
+            if(existing.service==entry.service&&existing.id==entry.id&&!existing.session){
+                existing.session=true;cacheTimer_.start();Q_EMIT updated();break;
+            }
+        return;
+    }
     seen_.insert(key);entries_.append(entry);
     std::sort(entries_.begin(),entries_.end(),[](const auto& a,const auto& b){return a.at>b.at;});
     if(entries_.size()>100){seen_.remove(entries_.last().service+":"+entries_.last().id);entries_.removeLast();}
+    cacheTimer_.start();
     Q_EMIT updated();
+}
+void DonationFeed::saveCache() {
+    if(!cachePath_.isEmpty())saveDonationCache(cachePath_,daToken_,dpToken_,entries_);
 }
 void DonationFeed::connectDA() {
     if(closing_||daToken_.isEmpty())return;
@@ -124,7 +145,33 @@ void DonationFeed::connectDA() {
         if(code==401||code==403){setStatus(daStatus_,QString::fromUtf8("Нужно войти заново"));return;}
         if(code!=200||id.isEmpty()||daSocketToken_.isEmpty()){retryDA();return;}
         daChannel_="$alerts:donation_"+id;
+        if(!daHistoryChecked_)fetchDAHistory();
         socket_.open(QUrl("wss://centrifugo.donationalerts.com/connection/websocket"));
+    });
+}
+void DonationFeed::fetchDAHistory() {
+    if(closing_||daToken_.isEmpty()||daHistoryChecked_)return;
+    daHistoryChecked_=true;
+    const QString token=daToken_;
+    auto req=request(QUrl("https://www.donationalerts.com/api/v1/alerts/donations?page=1"));
+    req.setRawHeader("Authorization",("Bearer "+daToken_).toUtf8());
+    auto* reply=http_.get(req);
+    connect(reply,&QNetworkReply::finished,this,[this,reply,token]{
+        const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const auto body=QJsonDocument::fromJson(reply->readAll()).object();reply->deleteLater();
+        if(closing_||token!=daToken_)return;
+        if(code==401||code==403){
+            daHistoryPermissionNeeded_=true;Q_EMIT updated();return;
+        }
+        if(code!=200||!body.value("data").isArray()){
+            daHistoryChecked_=false;
+            QTimer::singleShot(60000,this,[this]{if(!closing_)fetchDAHistory();});
+            return;
+        }
+        for(const auto& value:body.value("data").toArray())if(value.isObject()){
+            auto entry=parseDA(value.toObject());entry.session=false;add(entry);
+        }
+        Q_EMIT updated();
     });
 }
 void DonationFeed::subscribeDA(const QString& client) {
