@@ -51,6 +51,19 @@ protected:
         p.drawArc(QRectF(4,4,20,20),300*16,120*16);
     }
 };
+class CoinIcon final : public QWidget {
+public:
+    CoinIcon(){setFixedSize(18,18);setToolTip(QString::fromUtf8("Донаты"));}
+protected:
+    void paintEvent(QPaintEvent*) override {
+        QPainter p(this);p.setRenderHint(QPainter::Antialiasing);
+        p.setPen(QPen(QColor("#f5bd32"),1.6));p.setBrush(QColor("#5a3d0e"));
+        p.drawEllipse(QRectF(2,2,14,14));
+        p.setPen(QPen(QColor("#ffe17b"),1.5,Qt::SolidLine,Qt::RoundCap));
+        p.drawArc(QRectF(5,5,8,8),75*16,215*16);
+        p.setPen(Qt::NoPen);p.setBrush(QColor("#ffd34a"));p.drawEllipse(QRectF(8,7,2,4));
+    }
+};
 constexpr auto dockStyle=R"QSS(
 QWidget {background:transparent;color:#eaf2ff;font-family:'Segoe UI';font-size:11px;}
 QWidget#donationsRoot {background:#080f19;}
@@ -65,8 +78,8 @@ QLabel#section {font-size:12px;font-weight:700;color:#eaf2ff;}
 QLabel#muted {color:#9db4d6;}
 QLabel#number {font-size:19px;font-weight:700;color:#26deb0;}
 QLabel#serviceTotal {font-size:11px;color:#a8bfdc;}
-QFrame#usdBox {background:#102132;border:1px solid #36526b;border-radius:6px;}
-QLabel#usdNumber {font-size:15px;font-weight:700;color:#26deb0;}
+QFrame#usdBox {background:#1a1b17;border:1px solid #796130;border-radius:6px;}
+QLabel#usdNumber {font-size:15px;font-weight:700;color:#ffd34a;}
 QPushButton {background:#192638;color:#dce9fa;border:1px solid #41536d;border-radius:5px;padding:5px 8px;min-height:17px;}
 QPushButton:hover {background:#26394d;border-color:#63809e;}
 QPushButton#plain {background:transparent;border:0;color:#9db4d6;}
@@ -119,6 +132,9 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* home=new QWidget;home->setObjectName("homePage");auto* homeLayout=new QVBoxLayout(home);
     homeLayout->setContentsMargins(7,8,7,6);homeLayout->setSpacing(7);
     QVBoxLayout* summaryLayout=nullptr;auto* summary=card(&summaryLayout);
+    auto* summaryTitle=new QHBoxLayout;summaryTitle->setSpacing(4);
+    summaryTitle->addWidget(new CoinIcon);summaryTitle->addWidget(label(QString::fromUtf8("Итоги донатов"),"section"));
+    summaryTitle->addStretch();summaryLayout->addLayout(summaryTitle);
     auto* totalsRow=new QHBoxLayout;totalsRow->setSpacing(7);
     auto* services=new QVBoxLayout;services->setSpacing(5);
     daTotals_=label({},"serviceTotal");services->addWidget(daTotals_);
@@ -133,7 +149,9 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     const auto totalsHint=QString::fromUtf8("История загружается постепенно и сохраняется на этом компьютере. Общий итог показывается после окончания загрузки. Месяц — с 1-го числа по местному времени. Разные валюты не складываются.");
     daTotals_->setToolTip(totalsHint);dpTotals_->setToolTip(totalsHint);
     homeLayout->addWidget(summary);
-    auto* heading=label(QString::fromUtf8("Последние донаты"),"section");homeLayout->addWidget(heading);
+    auto* headingRow=new QHBoxLayout;headingRow->setSpacing(4);
+    headingRow->addWidget(new CoinIcon);headingRow->addWidget(label(QString::fromUtf8("Последние донаты"),"section"));
+    headingRow->addStretch();homeLayout->addLayout(headingRow);
     auto* scroll=new QScrollArea;scroll->setWidgetResizable(true);
     feedList_=new QWidget;feedList_->setObjectName("feedList");feedLayout_=new QVBoxLayout(feedList_);
     feedLayout_->setContentsMargins(0,0,0,0);feedLayout_->setSpacing(6);
