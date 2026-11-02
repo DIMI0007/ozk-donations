@@ -106,22 +106,23 @@ QByteArray YouTubePlayer::page() const {
     const QString html=QString::fromUtf8(R"HTML(<!doctype html><html lang="ru"><head>
 <meta charset="utf-8"><meta name="referrer" content="strict-origin-when-cross-origin">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<style>html,body,#player{margin:0;width:100%;height:100%;background:#000;overflow:hidden}</style>
+<style>html,body,#player{margin:0;width:100%;height:100%;background:#000;overflow:hidden;border:0}</style>
 <script>
 const videoId="%1";const nonce="%2";
 function notify(kind){fetch('/event?nonce='+nonce+'&kind='+encodeURIComponent(kind),{cache:'no-store'}).catch(()=>{});}
 let playing=false;
 function onYouTubeIframeAPIReady(){
-  new YT.Player('player',{width:'100%',height:'100%',videoId:videoId,
-    playerVars:{playsinline:1,rel:0,origin:location.origin},
-    events:{onReady:e=>{notify('ready');e.target.playVideo();},
+  const frame=document.getElementById('player');
+  frame.src='https://www.youtube-nocookie.com/embed/'+videoId+
+    '?enablejsapi=1&playsinline=1&autoplay=1&origin='+encodeURIComponent(location.origin);
+  new YT.Player(frame,{events:{onReady:e=>{notify('ready');e.target.playVideo();},
       onStateChange:e=>{if(e.data===YT.PlayerState.PLAYING){playing=true;notify('playing');}
         if(e.data===YT.PlayerState.ENDED)notify('ended');},
       onError:e=>notify('error:'+e.data),onAutoplayBlocked:()=>notify('blocked')}});
   setTimeout(()=>{if(!playing)notify('stalled');},12000);
 }
 </script><script src="https://www.youtube.com/iframe_api"></script>
-</head><body><div id="player"></div></body></html>)HTML").arg(videoId_,nonce_);
+</head><body><iframe id="player" allow="autoplay; encrypted-media" referrerpolicy="strict-origin-when-cross-origin"></iframe></body></html>)HTML").arg(videoId_,nonce_);
     return html.toUtf8();
 }
 void YouTubePlayer::serve(QTcpSocket* socket,const QByteArray& requestBytes) {
