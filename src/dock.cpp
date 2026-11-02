@@ -51,6 +51,7 @@ QStackedWidget, QScrollArea, QScrollArea QWidget#qt_scrollarea_viewport {backgro
 QLabel {background:transparent;}
 QFrame#header {background:#080f19;border-bottom:1px solid #2c4059;}
 QFrame#card {background:#0c1725;border:1px solid #30465e;border-radius:7px;}
+QFrame#newDonationCard {background:#151b21;border:1px solid #d9ab3c;border-radius:7px;}
 QLabel#title {font-size:16px;font-weight:700;color:#f7fbff;}
 QLabel#section {font-size:12px;font-weight:700;color:#eaf2ff;}
 QLabel#muted {color:#9db4d6;}
@@ -273,6 +274,7 @@ void DonationsDock::render() {
             QString::fromUtf8("Новых донатов пока нет"));
         for(const auto& entry:entries){
             QVBoxLayout* inside=nullptr;auto* row=card(&inside);
+            if(entry.session)row->setObjectName("newDonationCard");
             auto* top=new QHBoxLayout;top->setSpacing(5);
             auto* logo=new QLabel;logo->setPixmap(QPixmap(entry.service=="DonationAlerts"?
                 ":/ozk-donations/brands/donationalerts.png":":/ozk-donations/brands/donatepay.png")
