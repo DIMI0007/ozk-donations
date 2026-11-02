@@ -35,7 +35,7 @@ QVector<YouTubeLink> findYouTubeLinks(const QString& message) {
         const auto match=it.next();QString candidate=match.captured();
         while(!candidate.isEmpty()&&QStringLiteral(".,;:!?)]}").contains(candidate.back()))candidate.chop(1);
         const QString id=videoId(candidate);
-        if(!id.isEmpty())found.append({match.capturedStart(),candidate.size(),id});
+        if(!id.isEmpty())found.append({int(match.capturedStart()),int(candidate.size()),id});
     }
     return found;
 }
