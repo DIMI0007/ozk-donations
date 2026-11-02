@@ -12,6 +12,7 @@ class QStackedWidget;
 class QScrollArea;
 class QNetworkReply;
 class QCheckBox;
+class YouTubePlayer;
 
 class DonationsDock : public QWidget {
     Q_OBJECT
@@ -23,12 +24,14 @@ private:
     void refreshCredentials();
     void render();
     void beginDALogin();
+    void openVideo(const QString& id);
     QString ownPath_;
     QString notifyPath_;
     DonationCredentials credentials_;
     DonationFeed feed_;
     OAuthLoopback login_;
     QStackedWidget* pages_=nullptr;
+    YouTubePlayer* player_=nullptr;
     QWidget* feedList_=nullptr;
     QVBoxLayout* feedLayout_=nullptr;
     QLabel* total_=nullptr;

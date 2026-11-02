@@ -1,5 +1,7 @@
 #include "dock.hpp"
 #include "credentials.hpp"
+#include "youtube_links.hpp"
+#include "youtube_player.hpp"
 #include <QDesktopServices>
 #include <QCheckBox>
 #include <QFrame>
@@ -101,7 +103,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.1.0"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.2.0"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -134,6 +136,8 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     settingsMessage_=label({},"muted");settingsLayout->addWidget(settingsMessage_);
     settingsLayout->addStretch();settingsScroll->setWidget(settingsContent);
     settingsOuter->addWidget(settingsScroll,1);pages_->addWidget(settingsPage);
+    player_=new YouTubePlayer;pages_->addWidget(player_);
+    connect(player_,&YouTubePlayer::returnRequested,this,[this]{pages_->setCurrentIndex(0);});
     connect(settings,&QPushButton::clicked,this,[this]{showSettings(true);});
     connect(back,&QPushButton::clicked,this,[this]{showSettings(false);});
     connect(daLogin,&QPushButton::clicked,this,&DonationsDock::beginDALogin);
@@ -188,7 +192,13 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     connect(credentialsTimer_,&QTimer::timeout,this,&DonationsDock::refreshCredentials);
     credentialsTimer_->start();refreshCredentials();
 }
-void DonationsDock::showSettings(bool visible) {pages_->setCurrentIndex(visible?1:0);}
+void DonationsDock::showSettings(bool visible) {
+    if(pages_->currentWidget()==player_)player_->stop();
+    pages_->setCurrentIndex(visible?1:0);
+}
+void DonationsDock::openVideo(const QString& id) {
+    if(player_->play(id))pages_->setCurrentWidget(player_);
+}
 void DonationsDock::refreshCredentials() {
     if(closing_)return;
     const auto next=loadCredentials(ownPath_,notifyPath_);
@@ -257,7 +267,21 @@ void DonationsDock::render() {
             sum->setStyleSheet("color:#20deb2;font-weight:700;");top->addWidget(sum);
             inside->addLayout(top);
             auto* source=label(entry.service+" · "+entry.at.toString("dd.MM · HH:mm"),"muted");inside->addWidget(source);
-            if(!entry.message.trimmed().isEmpty())inside->addWidget(label(sanitized(entry.message)));
+            if(!entry.message.trimmed().isEmpty()){
+                const QString message=sanitized(entry.message);
+                auto* messageLabel=label(message);
+                const QString linked=donationTextWithYouTubeLinks(message);
+                if(!linked.isEmpty()){
+                    messageLabel->setTextFormat(Qt::RichText);
+                    messageLabel->setText(linked);
+                    messageLabel->setTextInteractionFlags(Qt::TextBrowserInteraction);
+                    messageLabel->setOpenExternalLinks(false);
+                    connect(messageLabel,&QLabel::linkActivated,this,[this](const QString& href){
+                        if(href.startsWith("ozkvideo:"))openVideo(href.mid(9));
+                    });
+                }
+                inside->addWidget(messageLabel);
+            }
             feedLayout_->addWidget(row);
         }
     }
@@ -266,5 +290,5 @@ void DonationsDock::render() {
 void DonationsDock::shutdown() {
     if(closing_)return;
     closing_=true;credentialsTimer_->stop();login_.stop();
-    if(loginReply_)loginReply_->abort();feed_.stop();
+    if(loginReply_)loginReply_->abort();player_->stop();feed_.stop();
 }

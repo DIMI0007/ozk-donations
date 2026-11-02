@@ -43,7 +43,8 @@ find_package(Qt6WebSockets 6.11.1 EXACT REQUIRED)
 
 add_library(${CMAKE_PROJECT_NAME} MODULE
   src/plugin.cpp src/dock.cpp src/dock.hpp src/feed.cpp src/feed.hpp
-  src/credentials.cpp src/credentials.hpp src/oauth_loopback.hpp src/brands.qrc)
+  src/credentials.cpp src/credentials.hpp src/oauth_loopback.hpp src/brands.qrc
+  src/youtube_links.cpp src/youtube_links.hpp src/youtube_player.cpp src/youtube_player.hpp)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE src)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OBS::libobs OBS::obs-frontend-api
   Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets crypt32)
@@ -70,3 +71,14 @@ endif()
 add_test(NAME donation-feed COMMAND ozk-donations-tests)
 set_tests_properties(donation-feed PROPERTIES
   ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>;PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::WebSockets>")
+
+add_executable(ozk-youtube-links-tests tests/test_youtube_links.cpp src/youtube_links.cpp)
+target_include_directories(ozk-youtube-links-tests PRIVATE src)
+target_link_libraries(ozk-youtube-links-tests PRIVATE Qt6::Core)
+target_compile_definitions(ozk-youtube-links-tests PRIVATE QT_NO_KEYWORDS)
+if(MSVC)
+  target_compile_options(ozk-youtube-links-tests PRIVATE /UNDEBUG /utf-8)
+endif()
+add_test(NAME youtube-links COMMAND ozk-youtube-links-tests)
+set_tests_properties(youtube-links PROPERTIES
+  ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
