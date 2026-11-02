@@ -68,5 +68,12 @@ int main(int argc,char** argv){
     const auto restored=loadDonationCache(cache,"own-DA","own-DP");
     assert(restored.size()==1&&restored.first().donor=="Anna"&&!restored.first().session);
     assert(loadDonationCache(cache,"different-account","own-DP").isEmpty());
+    const QString totalsCache=dir.filePath("own/donations-cache.bin.totals");
+    const QJsonObject totalsData{{"version",1},{"account",donationTokenDigest("own-DA")},
+        {"rub",1234.5}};
+    assert(saveProtectedDonationJson(totalsCache,totalsData));
+    assert(loadProtectedDonationJson(totalsCache)==totalsData);
+    QFile encryptedTotals(totalsCache);assert(encryptedTotals.open(QIODevice::ReadOnly));
+    assert(!encryptedTotals.readAll().contains("1234.5"));
     return 0;
 }

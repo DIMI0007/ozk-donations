@@ -47,6 +47,15 @@ QNetworkRequest request(const QUrl& url) {
     r.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);
     return r;
 }
+QJsonObject mapJson(const QMap<QString,double>& values) {
+    QJsonObject result;for(auto it=values.cbegin();it!=values.cend();++it)result.insert(it.key(),it.value());return result;
+}
+QMap<QString,double> jsonMap(const QJsonObject& value) {
+    QMap<QString,double> result;
+    for(auto it=value.begin();it!=value.end();++it)if(it.value().isDouble()&&std::isfinite(it.value().toDouble()))
+        result.insert(it.key(),it.value().toDouble());
+    return result;
+}
 }
 DonationEntry parseDA(const QJsonObject& packet) {
     const auto o=unwrap(packet);DonationEntry e;e.service="DonationAlerts";
@@ -99,6 +108,9 @@ void DonationFeed::configure(const DonationCredentials& c) {
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
     daToken_=c.da;dpToken_=c.dp;closing_=false;daFailures_=dpFailures_=0;
     daHistoryPermissionNeeded_=false;daHistoryChecked_=false;
+    daTotals_={};dpTotals_={};daTotalIds_.clear();dpTotalIds_.clear();
+    daTotalsStarted_=dpTotalsStarted_=false;
+    daNextPage_=1;dpNextSkip_=0;loadTotalsCache();
     entries_.clear();seen_.clear();
     for(const auto& entry:loadDonationCache(cachePath_,daToken_,dpToken_)){
         entries_.append(entry);seen_.insert(entry.service+":"+entry.id);
@@ -111,6 +123,7 @@ void DonationFeed::configure(const DonationCredentials& c) {
 }
 void DonationFeed::stop() {
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
+    saveTotalsCache();
     closing_=true;++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
 }
@@ -132,6 +145,43 @@ void DonationFeed::add(const DonationEntry& entry) {
 }
 void DonationFeed::saveCache() {
     if(!cachePath_.isEmpty())saveDonationCache(cachePath_,daToken_,dpToken_,entries_);
+}
+void DonationFeed::loadTotalsCache() {
+    if(cachePath_.isEmpty())return;
+    const auto cache=loadProtectedDonationJson(cachePath_+".totals");
+    if(cache.value("version").toInt()!=1)return;
+    const auto month=QDate::currentDate().toString("yyyy-MM");
+    auto restore=[&](const QString& key,const QString& token,Totals& totals,QSet<QString>& ids,int& next){
+        if(token.isEmpty())return;
+        const auto item=cache.value(key).toObject();
+        if(item.value("account").toString()!=donationTokenDigest(token))return;
+        totals.all=jsonMap(item.value("all").toObject());
+        if(item.value("monthKey").toString()==month)totals.month=jsonMap(item.value("month").toObject());
+        totals.complete=item.value("complete").toBool();
+        for(const auto& value:item.value("ids").toArray())if(value.isString())ids.insert(value.toString());
+        next=std::max(1,item.value("next").toInt(1));
+    };
+    restore("da",daToken_,daTotals_,daTotalIds_,daNextPage_);
+    restore("dp",dpToken_,dpTotals_,dpTotalIds_,dpNextSkip_);
+    Q_EMIT updated();
+}
+void DonationFeed::saveTotalsCache() {
+    if(cachePath_.isEmpty())return;
+    const auto old=loadProtectedDonationJson(cachePath_+".totals");
+    QJsonObject result{{"version",1}};
+    const auto month=QDate::currentDate().toString("yyyy-MM");
+    auto insert=[&](const QString& key,const QString& token,const Totals& totals,const QSet<QString>& ids,int next){
+        if(token.isEmpty()){
+            if(old.value(key).isObject())result.insert(key,old.value(key));return;
+        }
+        QJsonArray names;for(const auto& id:ids)names.append(id);
+        result.insert(key,QJsonObject{{"account",donationTokenDigest(token)},
+            {"all",mapJson(totals.all)},{"month",mapJson(totals.month)},
+            {"monthKey",month},{"complete",totals.complete},{"next",next},{"ids",names}});
+    };
+    insert("da",daToken_,daTotals_,daTotalIds_,daNextPage_);
+    insert("dp",dpToken_,dpTotals_,dpTotalIds_,dpNextSkip_);
+    saveProtectedDonationJson(cachePath_+".totals",result);
 }
 void DonationFeed::connectDA() {
     if(closing_||daToken_.isEmpty())return;
@@ -155,25 +205,45 @@ void DonationFeed::connectDA() {
 void DonationFeed::fetchDAHistory() {
     if(closing_||daToken_.isEmpty()||daHistoryChecked_)return;
     daHistoryChecked_=true;
+    daTotalsStarted_=true;
+    fetchDAHistoryPage(1);
+}
+void DonationFeed::collectTotal(const DonationEntry& entry) {
+    if(!entry.valid())return;
+    auto& ids=entry.service=="DonationAlerts"?daTotalIds_:dpTotalIds_;
+    auto& total=entry.service=="DonationAlerts"?daTotals_:dpTotals_;
+    const QString key=entry.service+":"+entry.id;
+    if(ids.contains(key))return;
+    ids.insert(key);total.all[entry.currency]+=entry.amount;
+    const auto date=entry.at.toLocalTime().date();const auto today=QDate::currentDate();
+    if(date.year()==today.year()&&date.month()==today.month())total.month[entry.currency]+=entry.amount;
+}
+void DonationFeed::fetchDAHistoryPage(int page) {
+    if(closing_||daToken_.isEmpty()||page<1||page>10000)return;
     const QString token=daToken_;
-    auto req=request(QUrl("https://www.donationalerts.com/api/v1/alerts/donations?page=1"));
+    auto req=request(QUrl(QString("https://www.donationalerts.com/api/v1/alerts/donations?page=%1").arg(page)));
     req.setRawHeader("Authorization",("Bearer "+daToken_).toUtf8());
     auto* reply=http_.get(req);
-    connect(reply,&QNetworkReply::finished,this,[this,reply,token]{
+    connect(reply,&QNetworkReply::finished,this,[this,reply,token,page]{
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto body=QJsonDocument::fromJson(reply->readAll()).object();reply->deleteLater();
         if(closing_||token!=daToken_)return;
         if(code==401||code==403){
-            daHistoryPermissionNeeded_=true;Q_EMIT updated();return;
+            daHistoryPermissionNeeded_=true;daTotalsStarted_=false;Q_EMIT updated();return;
         }
         if(code!=200||!body.value("data").isArray()){
-            daHistoryChecked_=false;
-            QTimer::singleShot(60000,this,[this]{if(!closing_)fetchDAHistory();});
+            QTimer::singleShot(60000,this,[this,token,page]{if(!closing_&&token==daToken_)fetchDAHistoryPage(page);});
             return;
         }
         for(const auto& value:body.value("data").toArray())if(value.isObject()){
-            auto entry=parseDA(value.toObject());entry.session=false;add(entry);
+            auto entry=parseDA(value.toObject());entry.session=false;add(entry);collectTotal(entry);
         }
+        daNextPage_=page+1;saveTotalsCache();
+        const auto meta=body.value("meta").toObject();
+        const int last=meta.value("last_page").toInt(page);
+        if(page<last&&last<=10000&&!(daTotals_.complete&&page==1))
+            QTimer::singleShot(3000,this,[this,token,page]{if(!closing_&&token==daToken_)fetchDAHistoryPage(page+1);});
+        else if(page>=last){daTotals_.complete=true;saveTotalsCache();Q_EMIT updated();}
         Q_EMIT updated();
     });
 }
@@ -212,7 +282,7 @@ void DonationFeed::receiveDA(const QString& text) {
     if(!reason.isEmpty()&&reason!="create"&&reason!="new")return;
     auto entry=parseDA(payload);
     entry.session=occurredThisSession(entry,startedAt_);
-    add(entry);
+    add(entry);if(daTotalsStarted_){collectTotal(entry);saveTotalsCache();Q_EMIT updated();}
 }
 void DonationFeed::retryDA() {
     if(closing_||daToken_.isEmpty())return;
@@ -256,8 +326,45 @@ void DonationFeed::pollDP() {
             auto donation=parseDP(row.toObject());
             donation.session=occurredThisSession(donation,startedAt_);
             add(donation);
+            if(!dpTotalsStarted_||dpTotals_.complete)collectTotal(donation);
         }
+        if(!dpTotalsStarted_){
+            dpTotalsStarted_=true;
+            if(rows.size()<100)dpTotals_.complete=true;
+            else if(!dpTotals_.complete)
+                QTimer::singleShot(25000,this,[this,token=dpToken_]{if(!closing_&&token==dpToken_)fetchDPHistory(100);});
+        }
+        saveTotalsCache();
+        Q_EMIT updated();
         dpFailures_=0;setStatus(dpStatus_,QString::fromUtf8("Подключён"));
         dpTimer_.start(60000); // Notify also polls; keep combined request rate modest.
+    });
+}
+void DonationFeed::fetchDPHistory(int skip) {
+    if(closing_||dpToken_.isEmpty()||skip<100||skip>1000000)return;
+    const QString token=dpToken_;
+    QUrl url("https://donatepay.ru/api/v1/transactions");QUrlQuery query;
+    query.addQueryItem("access_token",token);query.addQueryItem("limit","100");
+    query.addQueryItem("skip",QString::number(skip));query.addQueryItem("type","donation");
+    query.addQueryItem("status","success");query.addQueryItem("order","DESC");url.setQuery(query);
+    auto* reply=http_.get(request(url));
+    connect(reply,&QNetworkReply::finished,this,[this,reply,token,skip]{
+        const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const auto bytes=reply->readAll();reply->deleteLater();
+        if(closing_||token!=dpToken_)return;
+        const auto body=QJsonDocument::fromJson(bytes).object();
+        auto rows=body.value("data").toArray();
+        if(rows.isEmpty()&&body.value("data").isObject())rows=body.value("data").toObject().value("data").toArray();
+        if(rows.isEmpty())rows=body.value("transactions").toArray();
+        if(code!=200||(!body.value("data").isArray()&&!body.value("data").isObject()&&!body.value("transactions").isArray())){
+            QTimer::singleShot(60000,this,[this,token,skip]{if(!closing_&&token==dpToken_)fetchDPHistory(skip);});return;
+        }
+        const int before=dpTotalIds_.size();
+        for(const auto& row:rows)if(row.isObject())collectTotal(parseDP(row.toObject()));
+        dpNextSkip_=skip+100;saveTotalsCache();
+        if(rows.size()<100){dpTotals_.complete=true;saveTotalsCache();Q_EMIT updated();return;}
+        if(dpTotalIds_.size()==before){return;} // Unknown pagination; do not show an incomplete total.
+        QTimer::singleShot(25000,this,[this,token,skip]{if(!closing_&&token==dpToken_)fetchDPHistory(skip+100);});
+        Q_EMIT updated();
     });
 }

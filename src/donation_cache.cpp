@@ -31,6 +31,18 @@ QByteArray unprotect(const QByteArray& encrypted) {
     SecureZeroMemory(out.pbData,out.cbData);LocalFree(out.pbData);return plain;
 }
 }
+QString donationTokenDigest(const QString& token){return digest(token);}
+QJsonObject loadProtectedDonationJson(const QString& path) {
+    QFile file(path);if(!file.open(QIODevice::ReadOnly)||file.size()>8*1024*1024)return {};
+    return QJsonDocument::fromJson(unprotect(file.readAll())).object();
+}
+bool saveProtectedDonationJson(const QString& path,const QJsonObject& value) {
+    if(path.isEmpty()||!QDir().mkpath(QFileInfo(path).absolutePath()))return false;
+    const auto encrypted=protect(QJsonDocument(value).toJson(QJsonDocument::Compact));
+    if(encrypted.isEmpty())return false;
+    QSaveFile file(path);if(!file.open(QIODevice::WriteOnly))return false;
+    return file.write(encrypted)==encrypted.size()&&file.commit();
+}
 QVector<DonationEntry> loadDonationCache(const QString& path,const QString& daToken,const QString& dpToken) {
     QVector<DonationEntry> entries;
     QFile file(path);if(!file.open(QIODevice::ReadOnly)||file.size()>512*1024)return entries;

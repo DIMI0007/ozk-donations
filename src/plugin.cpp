@@ -66,7 +66,7 @@ bool obs_module_load(void){
     if(!QSslSocket::supportsSsl()&&QSslSocket::availableBackends().contains("schannel"))
         QSslSocket::setActiveBackend("schannel");
     obs_frontend_add_event_callback(frontend,nullptr);
-    blog(LOG_INFO,"[OZK Donations] 0.4.0 loaded");return true;
+    blog(LOG_INFO,"[OZK Donations] 0.4.1 loaded");return true;
 }
 void obs_module_unload(void){
     exiting=true;obs_frontend_remove_event_callback(frontend,nullptr);

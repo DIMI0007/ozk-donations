@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QDateTime>
 #include <QJsonObject>
+#include <QMap>
 #include <QNetworkAccessManager>
 #include <QSet>
 #include <QTimer>
@@ -36,6 +37,8 @@ public:
         ((!daToken_.isEmpty()&&daStatus_.contains(QString::fromUtf8("подключение"),Qt::CaseInsensitive))||
          (!dpToken_.isEmpty()&&dpStatus_.contains(QString::fromUtf8("подключение"),Qt::CaseInsensitive)));}
     bool hasAccounts() const {return !daToken_.isEmpty()||!dpToken_.isEmpty();}
+    struct Totals {QMap<QString,double> all,month;bool complete=false;};
+    Totals totals(const QString& service) const {return service=="DonationAlerts"?daTotals_:dpTotals_;}
 Q_SIGNALS:
     void updated();
 private:
@@ -44,7 +47,12 @@ private:
     void receiveDA(const QString& text);
     void retryDA();
     void fetchDAHistory();
+    void fetchDAHistoryPage(int page);
     void pollDP();
+    void fetchDPHistory(int skip);
+    void collectTotal(const DonationEntry& entry);
+    void loadTotalsCache();
+    void saveTotalsCache();
     void saveCache();
     void add(const DonationEntry& entry);
     void setStatus(QString& target,const QString& status);
@@ -62,5 +70,9 @@ private:
     QDateTime startedAt_=QDateTime::currentDateTimeUtc();
     bool daHistoryPermissionNeeded_=false;
     bool daHistoryChecked_=false;
+    Totals daTotals_,dpTotals_;
+    QSet<QString> daTotalIds_,dpTotalIds_;
+    bool daTotalsStarted_=false,dpTotalsStarted_=false;
+    int daNextPage_=1,dpNextSkip_=0;
     QString cachePath_;
 };
