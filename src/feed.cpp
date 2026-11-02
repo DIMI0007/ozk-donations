@@ -155,8 +155,9 @@ void DonationFeed::loadTotalsCache() {
         if(token.isEmpty())return;
         const auto item=cache.value(key).toObject();
         if(item.value("account").toString()!=donationTokenDigest(token))return;
+        if(item.value("monthKey").toString()!=month)return; // Recount for a new calendar month.
         totals.all=jsonMap(item.value("all").toObject());
-        if(item.value("monthKey").toString()==month)totals.month=jsonMap(item.value("month").toObject());
+        totals.month=jsonMap(item.value("month").toObject());
         totals.complete=item.value("complete").toBool();
         for(const auto& value:item.value("ids").toArray())if(value.isString())ids.insert(value.toString());
         next=std::max(1,item.value("next").toInt(1));
