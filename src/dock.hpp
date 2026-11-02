@@ -35,6 +35,8 @@ private:
     QWidget* feedList_=nullptr;
     QVBoxLayout* feedLayout_=nullptr;
     QLabel* total_=nullptr;
+    QLabel* daTotals_=nullptr;
+    QLabel* dpTotals_=nullptr;
     QLabel* daStatus_=nullptr;
     QLabel* dpStatus_=nullptr;
     QLabel* daHint_=nullptr;
