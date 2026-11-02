@@ -97,7 +97,7 @@ void DonationFeed::configure(const DonationCredentials& c) {
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
     ++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
-    daToken_=c.da;dpToken_=c.dp;closing_=false;daFailures_=dpFailures_=0;dpPrimed_=false;
+    daToken_=c.da;dpToken_=c.dp;closing_=false;daFailures_=dpFailures_=0;
     daHistoryPermissionNeeded_=false;daHistoryChecked_=false;
     entries_.clear();seen_.clear();
     for(const auto& entry:loadDonationCache(cachePath_,daToken_,dpToken_)){
@@ -253,10 +253,10 @@ void DonationFeed::pollDP() {
             setStatus(dpStatus_,QString::fromUtf8("Неизвестный ответ API"));return;
         }
         for(const auto& row:rows)if(row.isObject()){
-            auto donation=parseDP(row.toObject());donation.session=dpPrimed_;
+            auto donation=parseDP(row.toObject());
+            donation.session=occurredThisSession(donation,startedAt_);
             add(donation);
         }
-        dpPrimed_=true;
         dpFailures_=0;setStatus(dpStatus_,QString::fromUtf8("Подключён"));
         dpTimer_.start(60000); // Notify also polls; keep combined request rate modest.
     });

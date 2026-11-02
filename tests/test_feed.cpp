@@ -22,6 +22,10 @@ int main(int argc,char** argv){
     assert(!occurredThisSession(historical,started));
     DonationEntry fresh=historical;fresh.at=started.addSecs(5);
     assert(occurredThisSession(fresh,started));
+    const auto oldDP=parseDP(QJsonObject{{"id",79},{"what","Ivan"},{"sum",250},
+        {"currency","RUB"},{"type","donation"},{"status","success"},
+        {"created_at","2026-10-20 20:56:00"}});
+    assert(oldDP.valid()&&!occurredThisSession(oldDP,started));
     const auto test=parseDA(QJsonObject{{"id",1},{"amount",100},{"currency","RUB"},{"is_test",true}});
     assert(!test.valid());
     const auto dp=parseDP(QJsonObject{{"id",77},{"what","Ivan"},{"sum",250},

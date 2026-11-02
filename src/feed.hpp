@@ -59,7 +59,6 @@ private:
     quint64 daEpoch_=0,dpEpoch_=0;
     int daFailures_=0,dpFailures_=0;
     bool closing_=false,resettingSocket_=false;
-    bool dpPrimed_=false;
     QDateTime startedAt_=QDateTime::currentDateTimeUtc();
     bool daHistoryPermissionNeeded_=false;
     bool daHistoryChecked_=false;

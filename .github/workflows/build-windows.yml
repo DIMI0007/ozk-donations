@@ -31,9 +31,9 @@ jobs:
           Copy-Item README.md package/README.md
           Copy-Item LICENSE package/LICENSE
           Copy-Item THIRD_PARTY.md package/THIRD_PARTY.md
-          Compress-Archive -Path package/* -DestinationPath OZK-Donations-0.3.0-OBS33-Windows-x64.zip
+          Compress-Archive -Path package/* -DestinationPath OZK-Donations-0.3.1-OBS33-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
-          name: OZK-Donations-0.3.0-OBS33-Windows-x64
-          path: OZK-Donations-0.3.0-OBS33-Windows-x64.zip
+          name: OZK-Donations-0.3.1-OBS33-Windows-x64
+          path: OZK-Donations-0.3.1-OBS33-Windows-x64.zip
           if-no-files-found: error
