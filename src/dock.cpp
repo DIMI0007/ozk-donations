@@ -58,7 +58,7 @@ QLabel#title {font-size:16px;font-weight:700;color:#f7fbff;}
 QLabel#section {font-size:12px;font-weight:700;color:#eaf2ff;}
 QLabel#muted {color:#9db4d6;}
 QLabel#number {font-size:19px;font-weight:700;color:#26deb0;}
-QLabel#serviceTotal {font-size:10px;color:#a8bfdc;}
+QLabel#serviceTotal {font-size:11px;color:#a8bfdc;}
 QPushButton {background:#192638;color:#dce9fa;border:1px solid #41536d;border-radius:5px;padding:5px 8px;min-height:17px;}
 QPushButton:hover {background:#26394d;border-color:#63809e;}
 QPushButton#plain {background:transparent;border:0;color:#9db4d6;}
@@ -84,6 +84,11 @@ QString sums(const QMap<QString,double>& values) {
     QStringList parts;
     for(auto it=values.cbegin();it!=values.cend();++it)parts<<money(it.value(),it.key());
     return parts.isEmpty()?QString::fromUtf8("0 RUB"):parts.join(" · ");
+}
+QString primarySum(const QMap<QString,double>& values) {
+    if(values.isEmpty())return QString::fromUtf8("0 RUB");
+    const auto key=values.contains("RUB")?QString("RUB"):values.firstKey();
+    return money(values.value(key),key);
 }
 QString sanitized(QString v,int limit=600) {
     v.remove(QRegularExpression("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"));
@@ -119,7 +124,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.4.1"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.4.2"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -273,11 +278,18 @@ void DonationsDock::render() {
     auto serviceTotal=[&](const QString& service){
         const auto totals=feed_.totals(service);
         if(!totals.complete)return QString::fromUtf8("%1: считаем всю историю…").arg(service);
-        return QString::fromUtf8("%1: %2 всего · %3 за месяц")
-            .arg(service,sums(totals.all),sums(totals.month));
+        const auto other=totals.all.size()>1?QString::fromUtf8(" · ещё %1 валют").arg(totals.all.size()-1):QString();
+        return QString::fromUtf8("%1: %2 всего · %3 за месяц%4")
+            .arg(service,primarySum(totals.all),primarySum(totals.month),other);
     };
     daTotals_->setVisible(credentials_.daEnabled);dpTotals_->setVisible(credentials_.dpEnabled);
     daTotals_->setText(serviceTotal("DonationAlerts"));dpTotals_->setText(serviceTotal("DonatePay"));
+    const auto detail=[&](const QString& service){
+        const auto totals=feed_.totals(service);
+        if(!totals.complete)return QString::fromUtf8("Подсчёт истории продолжается. Результат сохраняется после каждой страницы.");
+        return QString::fromUtf8("Всего: %1\nЗа месяц: %2").arg(sums(totals.all),sums(totals.month));
+    };
+    daTotals_->setToolTip(detail("DonationAlerts"));dpTotals_->setToolTip(detail("DonatePay"));
     if(entries.isEmpty()){
         const QString message=feed_.loading()?QString::fromUtf8("Подгружаем последние донаты…"):
              feed_.hasAccounts()?QString::fromUtf8("Последних донатов пока нет"):
