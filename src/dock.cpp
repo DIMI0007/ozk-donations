@@ -4,6 +4,7 @@
 #include "youtube_player.hpp"
 #include <QDesktopServices>
 #include <QCheckBox>
+#include <QDir>
 #include <QFrame>
 #include <QFileInfo>
 #include <QHBoxLayout>

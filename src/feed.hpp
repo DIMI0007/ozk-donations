@@ -19,6 +19,7 @@ struct DonationEntry {
 };
 DonationEntry parseDA(const QJsonObject& packet);
 DonationEntry parseDP(const QJsonObject& packet);
+bool occurredThisSession(const DonationEntry& entry,const QDateTime& startedAt);
 
 class DonationFeed : public QObject {
     Q_OBJECT
@@ -59,6 +60,7 @@ private:
     int daFailures_=0,dpFailures_=0;
     bool closing_=false,resettingSocket_=false;
     bool dpPrimed_=false;
+    QDateTime startedAt_=QDateTime::currentDateTimeUtc();
     bool daHistoryPermissionNeeded_=false;
     bool daHistoryChecked_=false;
     QString cachePath_;

@@ -69,6 +69,9 @@ DonationEntry parseDP(const QJsonObject& packet) {
        first(o,{"status"}).compare("success",Qt::CaseInsensitive)!=0)e.amount=0;
     return e;
 }
+bool occurredThisSession(const DonationEntry& entry,const QDateTime& startedAt) {
+    return entry.at.isValid()&&startedAt.isValid()&&entry.at.toUTC()>=startedAt.toUTC();
+}
 DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
     daRetry_.setSingleShot(true);dpTimer_.setSingleShot(true);cacheTimer_.setSingleShot(true);
     cacheTimer_.setInterval(800);
@@ -207,7 +210,9 @@ void DonationFeed::receiveDA(const QString& text) {
     const auto payload=result.value("data").toObject();
     const QString reason=payload.value("reason").toString();
     if(!reason.isEmpty()&&reason!="create"&&reason!="new")return;
-    add(parseDA(payload));
+    auto entry=parseDA(payload);
+    entry.session=occurredThisSession(entry,startedAt_);
+    add(entry);
 }
 void DonationFeed::retryDA() {
     if(closing_||daToken_.isEmpty())return;

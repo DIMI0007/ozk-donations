@@ -18,6 +18,10 @@ int main(int argc,char** argv){
     const auto historical=parseDA(QJsonObject{{"id",43},{"username","Anna"},
         {"amount",150},{"currency","RUB"},{"created_at","2026-10-20 20:56:00"}});
     assert(historical.valid()&&historical.at.date()==QDate(2026,10,20));
+    const auto started=QDateTime::fromString("2026-11-02T11:00:00Z",Qt::ISODate);
+    assert(!occurredThisSession(historical,started));
+    DonationEntry fresh=historical;fresh.at=started.addSecs(5);
+    assert(occurredThisSession(fresh,started));
     const auto test=parseDA(QJsonObject{{"id",1},{"amount",100},{"currency","RUB"},{"is_test",true}});
     assert(!test.valid());
     const auto dp=parseDP(QJsonObject{{"id",77},{"what","Ivan"},{"sum",250},
