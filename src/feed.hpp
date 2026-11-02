@@ -51,6 +51,7 @@ private:
     void pollDP();
     void fetchDPHistory(int skip);
     void collectTotal(const DonationEntry& entry);
+    void updateDataUsage();
     void loadTotalsCache();
     void saveTotalsCache();
     void saveCache();

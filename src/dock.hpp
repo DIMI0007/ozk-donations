@@ -2,6 +2,7 @@
 #include "feed.hpp"
 #include "oauth_loopback.hpp"
 #include <QPointer>
+#include <QMap>
 #include <QWidget>
 
 class QLabel;
@@ -12,6 +13,7 @@ class QStackedWidget;
 class QScrollArea;
 class QNetworkReply;
 class QCheckBox;
+class QNetworkAccessManager;
 class YouTubePlayer;
 
 class DonationsDock : public QWidget {
@@ -25,6 +27,8 @@ private:
     void render();
     void beginDALogin();
     void openVideo(const QString& id);
+    void loadRates();
+    void fetchRatesOnce();
     QString ownPath_;
     QString notifyPath_;
     DonationCredentials credentials_;
@@ -37,6 +41,8 @@ private:
     QLabel* total_=nullptr;
     QLabel* daTotals_=nullptr;
     QLabel* dpTotals_=nullptr;
+    QLabel* combinedUsd_=nullptr;
+    QLabel* rateStatus_=nullptr;
     QLabel* daStatus_=nullptr;
     QLabel* dpStatus_=nullptr;
     QLabel* daHint_=nullptr;
@@ -48,5 +54,10 @@ private:
     QCheckBox* dpEnabled_=nullptr;
     QTimer* credentialsTimer_=nullptr;
     QPointer<QNetworkReply> loginReply_;
+    QPointer<QNetworkReply> ratesReply_;
+    QNetworkAccessManager* ratesHttp_=nullptr;
+    QMap<QString,double> rubPerUnit_;
+    QString ratesDate_;
+    QString ratesPath_;
     bool closing_=false;
 };

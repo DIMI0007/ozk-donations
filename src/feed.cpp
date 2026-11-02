@@ -1,5 +1,6 @@
 #include "feed.hpp"
 #include "donation_cache.hpp"
+#include "telemetry.hpp"
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonValue>
@@ -90,7 +91,9 @@ DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
     connect(&socket_,&QWebSocket::connected,this,[this]{
         if(closing_)return;
         QJsonObject hello{{"id",1},{"params",QJsonObject{{"token",daSocketToken_}}}};
-        socket_.sendTextMessage(QString::fromUtf8(QJsonDocument(hello).toJson(QJsonDocument::Compact)));
+        const auto message=QJsonDocument(hello).toJson(QJsonDocument::Compact);
+        donations_telemetry::sent.fetch_add(std::uint64_t(message.size()));
+        socket_.sendTextMessage(QString::fromUtf8(message));
     });
     connect(&socket_,&QWebSocket::textMessageReceived,this,&DonationFeed::receiveDA);
     connect(&socket_,&QWebSocket::disconnected,this,[this]{if(!closing_&&!resettingSocket_)retryDA();});
@@ -102,6 +105,7 @@ void DonationFeed::setStatus(QString& target,const QString& value) {
     if(target!=value){target=value;Q_EMIT updated();}
 }
 void DonationFeed::configure(const DonationCredentials& c) {
+    donations_telemetry::CpuScope cpu;
     if(daToken_==c.da&&dpToken_==c.dp&&!closing_)return;
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
     ++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
@@ -128,6 +132,7 @@ void DonationFeed::stop() {
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
 }
 void DonationFeed::add(const DonationEntry& entry) {
+    donations_telemetry::CpuScope cpu;
     if(!entry.valid())return;
     const QString key=entry.service+":"+entry.id;
     if(seen_.contains(key)){
@@ -141,12 +146,24 @@ void DonationFeed::add(const DonationEntry& entry) {
     std::sort(entries_.begin(),entries_.end(),[](const auto& a,const auto& b){return a.at>b.at;});
     if(entries_.size()>100){seen_.remove(entries_.last().service+":"+entries_.last().id);entries_.removeLast();}
     cacheTimer_.start();
+    updateDataUsage();
     Q_EMIT updated();
+}
+void DonationFeed::updateDataUsage() {
+    std::uint64_t bytes=std::uint64_t(entries_.capacity())*sizeof(DonationEntry);
+    for(const auto& e:entries_)for(const auto* text:{&e.service,&e.id,&e.donor,&e.message,&e.currency})
+        bytes+=std::uint64_t(text->capacity())*sizeof(QChar);
+    for(const auto& set:{&daTotalIds_,&dpTotalIds_}){
+        bytes+=std::uint64_t(set->size())*sizeof(QString);
+        for(const auto& id:*set)bytes+=std::uint64_t(id.capacity())*sizeof(QChar);
+    }
+    donations_telemetry::dataBytes.store(bytes);
 }
 void DonationFeed::saveCache() {
     if(!cachePath_.isEmpty())saveDonationCache(cachePath_,daToken_,dpToken_,entries_);
 }
 void DonationFeed::loadTotalsCache() {
+    donations_telemetry::CpuScope cpu;
     if(cachePath_.isEmpty())return;
     const auto cache=loadProtectedDonationJson(cachePath_+".totals");
     if(cache.value("version").toInt()!=1)return;
@@ -164,6 +181,7 @@ void DonationFeed::loadTotalsCache() {
     };
     restore("da",daToken_,daTotals_,daTotalIds_,daNextPage_);
     restore("dp",dpToken_,dpTotals_,dpTotalIds_,dpNextSkip_);
+    updateDataUsage();
     Q_EMIT updated();
 }
 void DonationFeed::saveTotalsCache() {
@@ -185,12 +203,14 @@ void DonationFeed::saveTotalsCache() {
     saveProtectedDonationJson(cachePath_+".totals",result);
 }
 void DonationFeed::connectDA() {
+    donations_telemetry::CpuScope cpu;
     if(closing_||daToken_.isEmpty())return;
     const quint64 epoch=++daEpoch_;
     auto req=request(QUrl("https://www.donationalerts.com/api/v1/user/oauth"));
     req.setRawHeader("Authorization",("Bearer "+daToken_).toUtf8());
-    auto* reply=http_.get(req);
+    auto* reply=donations_telemetry::watch(http_.get(req));
     connect(reply,&QNetworkReply::finished,this,[this,reply,epoch]{
+        donations_telemetry::CpuScope cpu;
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto body=QJsonDocument::fromJson(reply->readAll()).object();reply->deleteLater();
         if(closing_||epoch!=daEpoch_)return;
@@ -220,12 +240,14 @@ void DonationFeed::collectTotal(const DonationEntry& entry) {
     if(date.year()==today.year()&&date.month()==today.month())total.month[entry.currency]+=entry.amount;
 }
 void DonationFeed::fetchDAHistoryPage(int page) {
+    donations_telemetry::CpuScope cpu;
     if(closing_||daToken_.isEmpty()||page<1||page>10000)return;
     const QString token=daToken_;
     auto req=request(QUrl(QString("https://www.donationalerts.com/api/v1/alerts/donations?page=%1").arg(page)));
     req.setRawHeader("Authorization",("Bearer "+daToken_).toUtf8());
-    auto* reply=http_.get(req);
+    auto* reply=donations_telemetry::watch(http_.get(req));
     connect(reply,&QNetworkReply::finished,this,[this,reply,token,page]{
+        donations_telemetry::CpuScope cpu;
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto body=QJsonDocument::fromJson(reply->readAll()).object();reply->deleteLater();
         if(closing_||token!=daToken_)return;
@@ -240,6 +262,7 @@ void DonationFeed::fetchDAHistoryPage(int page) {
             auto entry=parseDA(value.toObject());entry.session=false;add(entry);collectTotal(entry);
         }
         daNextPage_=page+1;saveTotalsCache();
+        updateDataUsage();
         const auto meta=body.value("meta").toObject();
         const int last=meta.value("last_page").toInt(page);
         if(page<last&&last<=10000&&!(daTotals_.complete&&page==1))
@@ -254,8 +277,9 @@ void DonationFeed::subscribeDA(const QString& client) {
     req.setHeader(QNetworkRequest::ContentTypeHeader,"application/json");
     const quint64 epoch=daEpoch_;
     const auto data=QJsonDocument(QJsonObject{{"channels",QJsonArray{daChannel_}},{"client",client}}).toJson();
-    auto* reply=http_.post(req,data);
+    auto* reply=donations_telemetry::watch(http_.post(req,data));
     connect(reply,&QNetworkReply::finished,this,[this,reply,epoch]{
+        donations_telemetry::CpuScope cpu;
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto body=QJsonDocument::fromJson(reply->readAll()).object();reply->deleteLater();
         if(closing_||epoch!=daEpoch_)return;
@@ -264,10 +288,14 @@ void DonationFeed::subscribeDA(const QString& client) {
         if(code==401||code==403){setStatus(daStatus_,QString::fromUtf8("Нет доступа"));return;}
         if(code!=200||token.isEmpty()){retryDA();return;}
         const QJsonObject sub{{"id",2},{"method",1},{"params",QJsonObject{{"channel",daChannel_},{"token",token}}}};
-        socket_.sendTextMessage(QString::fromUtf8(QJsonDocument(sub).toJson(QJsonDocument::Compact)));
+        const auto message=QJsonDocument(sub).toJson(QJsonDocument::Compact);
+        donations_telemetry::sent.fetch_add(std::uint64_t(message.size()));
+        socket_.sendTextMessage(QString::fromUtf8(message));
     });
 }
 void DonationFeed::receiveDA(const QString& text) {
+    donations_telemetry::CpuScope cpu;
+    donations_telemetry::received.fetch_add(std::uint64_t(text.toUtf8().size()));
     const auto packet=QJsonDocument::fromJson(text.toUtf8()).object();
     const auto result=packet.value("result").toObject();
     if(packet.value("id").toInt()==1&&result.contains("client")){
@@ -293,14 +321,16 @@ void DonationFeed::retryDA() {
     setStatus(daStatus_,QString::fromUtf8("Переподключение…"));
 }
 void DonationFeed::pollDP() {
+    donations_telemetry::CpuScope cpu;
     if(closing_||dpToken_.isEmpty())return;
     const quint64 epoch=++dpEpoch_;
     QUrl url("https://donatepay.ru/api/v1/transactions");QUrlQuery query;
     query.addQueryItem("access_token",dpToken_);query.addQueryItem("limit","100");
     query.addQueryItem("type","donation");query.addQueryItem("status","success");
     query.addQueryItem("order","DESC");url.setQuery(query);
-    auto* reply=http_.get(request(url));
+    auto* reply=donations_telemetry::watch(http_.get(request(url)));
     connect(reply,&QNetworkReply::finished,this,[this,reply,epoch]{
+        donations_telemetry::CpuScope cpu;
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto bytes=reply->readAll();const auto retryAfter=reply->rawHeader("Retry-After");
         reply->deleteLater();if(closing_||epoch!=dpEpoch_)return;
@@ -342,14 +372,16 @@ void DonationFeed::pollDP() {
     });
 }
 void DonationFeed::fetchDPHistory(int skip) {
+    donations_telemetry::CpuScope cpu;
     if(closing_||dpToken_.isEmpty()||skip<100||skip>1000000)return;
     const QString token=dpToken_;
     QUrl url("https://donatepay.ru/api/v1/transactions");QUrlQuery query;
     query.addQueryItem("access_token",token);query.addQueryItem("limit","100");
     query.addQueryItem("skip",QString::number(skip));query.addQueryItem("type","donation");
     query.addQueryItem("status","success");query.addQueryItem("order","DESC");url.setQuery(query);
-    auto* reply=http_.get(request(url));
+    auto* reply=donations_telemetry::watch(http_.get(request(url)));
     connect(reply,&QNetworkReply::finished,this,[this,reply,token,skip]{
+        donations_telemetry::CpuScope cpu;
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto bytes=reply->readAll();reply->deleteLater();
         if(closing_||token!=dpToken_)return;
@@ -363,6 +395,7 @@ void DonationFeed::fetchDPHistory(int skip) {
         const int before=dpTotalIds_.size();
         for(const auto& row:rows)if(row.isObject())collectTotal(parseDP(row.toObject()));
         dpNextSkip_=skip+100;saveTotalsCache();
+        updateDataUsage();
         if(rows.size()<100){dpTotals_.complete=true;saveTotalsCache();Q_EMIT updated();return;}
         if(dpTotalIds_.size()==before){return;} // Unknown pagination; do not show an incomplete total.
         QTimer::singleShot(25000,this,[this,token,skip]{if(!closing_&&token==dpToken_)fetchDPHistory(skip+100);});

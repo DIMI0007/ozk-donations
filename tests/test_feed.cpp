@@ -1,6 +1,7 @@
 #include "feed.hpp"
 #include "credentials.hpp"
 #include "donation_cache.hpp"
+#include "currency_conversion.hpp"
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -12,6 +13,10 @@
 
 int main(int argc,char** argv){
     QCoreApplication app(argc,argv);
+    const auto converted=convertToRub({{"RUB",100.0},{"USD",2.0}},{{"USD",90.0}});
+    assert(converted.complete&&converted.converted&&converted.amount==280.0);
+    const auto missingRate=convertToRub({{"RUB",100.0},{"KZT",1000.0}},{{"USD",90.0}});
+    assert(!missingRate.complete&&missingRate.amount==100.0);
     const auto da=parseDA(QJsonObject{{"data",QJsonObject{{"id",42},{"username","Anna"},
         {"amount","150.00"},{"currency","RUB"},{"message","Спасибо!"}}}});
     assert(da.valid()&&da.id=="42"&&da.donor=="Anna"&&da.amount==150);

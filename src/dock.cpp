@@ -2,9 +2,12 @@
 #include "credentials.hpp"
 #include "youtube_links.hpp"
 #include "youtube_player.hpp"
+#include "telemetry.hpp"
+#include "currency_conversion.hpp"
 #include <QDesktopServices>
 #include <QCheckBox>
 #include <QDir>
+#include <QFile>
 #include <QFrame>
 #include <QFileInfo>
 #include <QHBoxLayout>
@@ -25,6 +28,9 @@
 #include <QRegularExpression>
 #include <QMap>
 #include <QLocale>
+#include <QSaveFile>
+#include <QJsonArray>
+#include <QNetworkAccessManager>
 #include <cmath>
 
 namespace {
@@ -59,6 +65,8 @@ QLabel#section {font-size:12px;font-weight:700;color:#eaf2ff;}
 QLabel#muted {color:#9db4d6;}
 QLabel#number {font-size:19px;font-weight:700;color:#26deb0;}
 QLabel#serviceTotal {font-size:11px;color:#a8bfdc;}
+QFrame#usdBox {background:#102132;border:1px solid #36526b;border-radius:6px;}
+QLabel#usdNumber {font-size:15px;font-weight:700;color:#26deb0;}
 QPushButton {background:#192638;color:#dce9fa;border:1px solid #41536d;border-radius:5px;padding:5px 8px;min-height:17px;}
 QPushButton:hover {background:#26394d;border-color:#63809e;}
 QPushButton#plain {background:transparent;border:0;color:#9db4d6;}
@@ -85,10 +93,9 @@ QString sums(const QMap<QString,double>& values) {
     for(auto it=values.cbegin();it!=values.cend();++it)parts<<money(it.value(),it.key());
     return parts.isEmpty()?QString::fromUtf8("0 RUB"):parts.join(" · ");
 }
-QString primarySum(const QMap<QString,double>& values) {
-    if(values.isEmpty())return QString::fromUtf8("0 RUB");
-    const auto key=values.contains("RUB")?QString("RUB"):values.firstKey();
-    return money(values.value(key),key);
+QString compactRub(double amount,bool converted) {
+    return (converted?QString::fromUtf8("≈ "):QString())+
+        QLocale(QLocale::Russian,QLocale::Russia).toString(amount,'f',0)+QString::fromUtf8(" ₽");
 }
 QString sanitized(QString v,int limit=600) {
     v.remove(QRegularExpression("[\\x00-\\x08\\x0B\\x0C\\x0E-\\x1F\\x7F]"));
@@ -99,6 +106,7 @@ QString sanitized(QString v,int limit=600) {
 DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_(this) {
     setObjectName("donationsRoot");setStyleSheet(QString::fromUtf8(dockStyle));
     setMinimumWidth(260);ownPath_=ownSettingsPath();notifyPath_=notifySettingsPath();
+    ratesPath_=QFileInfo(ownPath_).dir().filePath("exchange-rates.json");
     feed_.setCachePath(QFileInfo(ownPath_).dir().filePath("donations-cache.bin"));
     auto* root=new QVBoxLayout(this);root->setContentsMargins(0,0,0,0);root->setSpacing(0);
     auto* header=new QFrame;header->setObjectName("header");
@@ -111,8 +119,16 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* home=new QWidget;home->setObjectName("homePage");auto* homeLayout=new QVBoxLayout(home);
     homeLayout->setContentsMargins(7,8,7,6);homeLayout->setSpacing(7);
     QVBoxLayout* summaryLayout=nullptr;auto* summary=card(&summaryLayout);
-    daTotals_=label({},"serviceTotal");summaryLayout->addWidget(daTotals_);
-    dpTotals_=label({},"serviceTotal");summaryLayout->addWidget(dpTotals_);
+    auto* totalsRow=new QHBoxLayout;totalsRow->setSpacing(7);
+    auto* services=new QVBoxLayout;services->setSpacing(5);
+    daTotals_=label({},"serviceTotal");services->addWidget(daTotals_);
+    dpTotals_=label({},"serviceTotal");services->addWidget(dpTotals_);
+    totalsRow->addLayout(services,1);
+    auto* usdBox=new QFrame;usdBox->setObjectName("usdBox");usdBox->setFixedWidth(104);
+    auto* usdLayout=new QVBoxLayout(usdBox);usdLayout->setContentsMargins(6,5,6,5);usdLayout->setSpacing(2);
+    usdLayout->addWidget(label(QString::fromUtf8("ВСЕГО"),"muted"));
+    combinedUsd_=label(QString::fromUtf8("—"),"usdNumber");usdLayout->addWidget(combinedUsd_);
+    totalsRow->addWidget(usdBox);summaryLayout->addLayout(totalsRow);
     total_=label(QString::fromUtf8("Новых донатов пока нет"),"number");summaryLayout->addWidget(total_);
     const auto totalsHint=QString::fromUtf8("История загружается постепенно и сохраняется на этом компьютере. Общий итог показывается после окончания загрузки. Месяц — с 1-го числа по местному времени. Разные валюты не складываются.");
     daTotals_->setToolTip(totalsHint);dpTotals_->setToolTip(totalsHint);
@@ -124,7 +140,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.4.2"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.0"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -154,6 +170,11 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     dpKey_->setPlaceholderText(QString::fromUtf8("Ключ API DonatePay"));dpLayout->addWidget(dpKey_);
     auto* saveDP=new QPushButton(QString::fromUtf8("Сохранить ключ"));dpLayout->addWidget(saveDP);
     auto* dpHelp=new QPushButton(QString::fromUtf8("Где взять ключ DonatePay ↗"));dpLayout->addWidget(dpHelp);
+    QVBoxLayout* ratesLayout=nullptr;settingsLayout->addWidget(card(&ratesLayout));
+    ratesLayout->addWidget(label(QString::fromUtf8("Курс для итогов"),"section"));
+    ratesLayout->addWidget(label(QString::fromUtf8("Один сохранённый курс переводит иностранные донаты в рубли и общий итог в доллары. Это приблизительная оценка, а не сумма выплат."),"muted"));
+    rateStatus_=label({},"muted");ratesLayout->addWidget(rateStatus_);
+    auto* refreshRates=new QPushButton(QString::fromUtf8("Обновить курс один раз"));ratesLayout->addWidget(refreshRates);
     settingsMessage_=label({},"muted");settingsLayout->addWidget(settingsMessage_);
     settingsLayout->addStretch();settingsScroll->setWidget(settingsContent);
     settingsOuter->addWidget(settingsScroll,1);pages_->addWidget(settingsPage);
@@ -173,6 +194,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
         refreshCredentials();
     });
     connect(dpHelp,&QPushButton::clicked,this,[]{QDesktopServices::openUrl(QUrl("https://donatepay.ru/page/api"));});
+    connect(refreshRates,&QPushButton::clicked,this,&DonationsDock::fetchRatesOnce);
     auto saveChoices=[this]{
         if(saveServiceChoices(ownPath_,daEnabled_->isChecked(),dpEnabled_->isChecked()))refreshCredentials();
         else settingsMessage_->setText(QString::fromUtf8("Не удалось сохранить выбор сервисов."));
@@ -211,7 +233,9 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     });
     credentialsTimer_=new QTimer(this);credentialsTimer_->setInterval(15000);
     connect(credentialsTimer_,&QTimer::timeout,this,&DonationsDock::refreshCredentials);
-    credentialsTimer_->start();refreshCredentials();
+    credentialsTimer_->start();loadRates();
+    if(!QFileInfo::exists(ratesPath_))fetchRatesOnce();
+    refreshCredentials();
 }
 void DonationsDock::showSettings(bool visible) {
     if(pages_->currentWidget()==player_)player_->stop();
@@ -220,7 +244,57 @@ void DonationsDock::showSettings(bool visible) {
 void DonationsDock::openVideo(const QString& id) {
     if(player_->play(id))pages_->setCurrentWidget(player_);
 }
+void DonationsDock::loadRates() {
+    donations_telemetry::CpuScope cpu;
+    rubPerUnit_.clear();ratesDate_.clear();rubPerUnit_.insert("RUB",1.0);
+    QString source=ratesPath_;
+    if(!QFileInfo::exists(source))source=QFileInfo(notifyPath_).dir().filePath("exchange-rates.json");
+    QFile file(source);if(!file.open(QIODevice::ReadOnly)||file.size()>128*1024)return;
+    const auto json=QJsonDocument::fromJson(file.readAll()).object();
+    const auto rates=json.value("rub_per_unit").toObject();
+    for(auto it=rates.begin();it!=rates.end();++it){
+        const double value=it.value().toDouble();
+        if(it.key().size()==3&&std::isfinite(value)&&value>0)rubPerUnit_.insert(it.key().toUpper(),value);
+    }
+    ratesDate_=json.value("date").toString();
+}
+void DonationsDock::fetchRatesOnce() {
+    donations_telemetry::CpuScope cpu;
+    if(closing_||ratesReply_)return;
+    ratesHttp_=new QNetworkAccessManager(this);
+    QNetworkRequest req(QUrl("https://www.cbr-xml-daily.ru/daily_json.js"));
+    req.setTransferTimeout(15000);
+    req.setAttribute(QNetworkRequest::RedirectPolicyAttribute,QNetworkRequest::ManualRedirectPolicy);
+    auto* reply=donations_telemetry::watch(ratesHttp_->get(req));ratesReply_=reply;
+    render();
+    connect(reply,&QNetworkReply::finished,this,[this,reply]{
+        donations_telemetry::CpuScope cpu;
+        const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const auto json=QJsonDocument::fromJson(reply->readAll()).object();
+        reply->deleteLater();ratesReply_=nullptr;
+        if(closing_)return;
+        if(code!=200||json.value("Date").toString().isEmpty()){render();return;}
+        QJsonObject rates{{"RUB",1.0}};
+        const auto rows=json.value("Valute").toObject();
+        for(auto it=rows.begin();it!=rows.end();++it){
+            const auto row=it.value().toObject();
+            const auto code=row.value("CharCode").toString().toUpper();
+            const double nominal=row.value("Nominal").toDouble();
+            const double value=row.value("Value").toDouble();
+            if(code.size()==3&&std::isfinite(nominal)&&nominal>0&&std::isfinite(value)&&value>0)
+                rates.insert(code,value/nominal);
+        }
+        if(rates.size()<3||!QDir().mkpath(QFileInfo(ratesPath_).absolutePath())){render();return;}
+        QSaveFile file(ratesPath_);
+        const auto bytes=QJsonDocument(QJsonObject{{"source","https://www.cbr-xml-daily.ru/daily_json.js"},
+            {"date",json.value("Date")},{"rub_per_unit",rates}}).toJson();
+        if(file.open(QIODevice::WriteOnly)&&file.write(bytes)==bytes.size()&&file.commit()){
+            loadRates();render();
+        } else render();
+    });
+}
 void DonationsDock::refreshCredentials() {
+    donations_telemetry::CpuScope cpu;
     if(closing_)return;
     const auto next=loadCredentials(ownPath_,notifyPath_);
     if(next.da!=credentials_.da||next.dp!=credentials_.dp||
@@ -251,6 +325,7 @@ void DonationsDock::beginDALogin() {
     }
 }
 void DonationsDock::render() {
+    donations_telemetry::CpuScope cpu;
     if(closing_)return;
     daStatus_->setText(QString::fromUtf8("Состояние: ")+(credentials_.daEnabled?feed_.daStatus():QString::fromUtf8("Выключен"))+
         (credentials_.daFromNotify?QString::fromUtf8(" · вход через OZK Notify"):QString()));
@@ -277,19 +352,39 @@ void DonationsDock::render() {
     }
     auto serviceTotal=[&](const QString& service){
         const auto totals=feed_.totals(service);
-        if(!totals.complete)return QString::fromUtf8("%1: считаем всю историю…").arg(service);
-        const auto other=totals.all.size()>1?QString::fromUtf8(" · ещё %1 валют").arg(totals.all.size()-1):QString();
-        return QString::fromUtf8("%1: %2 всего · %3 за месяц%4")
-            .arg(service,primarySum(totals.all),primarySum(totals.month),other);
+        if(!totals.complete)return QString::fromUtf8("%1\nСчитаем историю…").arg(service);
+        const auto all=convertToRub(totals.all,rubPerUnit_);
+        const auto month=convertToRub(totals.month,rubPerUnit_);
+        if(!all.complete||!month.complete)return QString::fromUtf8("%1\nНет курса одной из валют").arg(service);
+        return QString::fromUtf8("%1\n%2 всего · %3 мес.")
+            .arg(service,compactRub(all.amount,all.converted),compactRub(month.amount,month.converted));
     };
     daTotals_->setVisible(credentials_.daEnabled);dpTotals_->setVisible(credentials_.dpEnabled);
     daTotals_->setText(serviceTotal("DonationAlerts"));dpTotals_->setText(serviceTotal("DonatePay"));
     const auto detail=[&](const QString& service){
         const auto totals=feed_.totals(service);
         if(!totals.complete)return QString::fromUtf8("Подсчёт истории продолжается. Результат сохраняется после каждой страницы.");
-        return QString::fromUtf8("Всего: %1\nЗа месяц: %2").arg(sums(totals.all),sums(totals.month));
+        return QString::fromUtf8("Исходные суммы\nВсего: %1\nЗа месяц: %2\nПересчёт по одному курсу от %3 — приблизительная оценка.")
+            .arg(sums(totals.all),sums(totals.month),ratesDate_);
     };
     daTotals_->setToolTip(detail("DonationAlerts"));dpTotals_->setToolTip(detail("DonatePay"));
+    QMap<QString,double> combined;
+    bool totalsReady=true,anyService=false;
+    for(const auto& service:{QString("DonationAlerts"),QString("DonatePay")}){
+        if(service=="DonationAlerts"?!credentials_.daEnabled:!credentials_.dpEnabled)continue;
+        anyService=true;const auto totals=feed_.totals(service);
+        if(!totals.complete){totalsReady=false;continue;}
+        for(auto it=totals.all.cbegin();it!=totals.all.cend();++it)combined[it.key()]+=it.value();
+    }
+    const auto combinedRub=convertToRub(combined,rubPerUnit_);
+    const double usdRate=rubPerUnit_.value("USD",0);
+    combinedUsd_->setText(anyService&&totalsReady&&combinedRub.complete&&usdRate>0?
+        QString::fromUtf8("≈ $%1").arg(QLocale(QLocale::Russian,QLocale::Russia).toString(combinedRub.amount/usdRate,'f',0)):
+        QString::fromUtf8("—"));
+    const auto rateDate=QDateTime::fromString(ratesDate_,Qt::ISODate).date();
+    rateStatus_->setText(rateDate.isValid()?QString::fromUtf8("Сохранённый курс от %1 · без автоматического обновления").arg(rateDate.toString("dd.MM.yyyy")):
+        ratesReply_?QString::fromUtf8("Загружаем курс…"):QString::fromUtf8("Курс не загружен"));
+    combinedUsd_->setToolTip(QString::fromUtf8("Примерная сумма всех подключённых сервисов в USD по одному сохранённому курсу от %1. Это не фактическая сумма выплат.").arg(rateDate.toString("dd.MM.yyyy")));
     if(entries.isEmpty()){
         const QString message=feed_.loading()?QString::fromUtf8("Подгружаем последние донаты…"):
              feed_.hasAccounts()?QString::fromUtf8("Последних донатов пока нет"):
@@ -339,5 +434,5 @@ void DonationsDock::render() {
 void DonationsDock::shutdown() {
     if(closing_)return;
     closing_=true;credentialsTimer_->stop();login_.stop();
-    if(loginReply_)loginReply_->abort();player_->stop();feed_.stop();
+    if(loginReply_)loginReply_->abort();if(ratesReply_)ratesReply_->abort();player_->stop();feed_.stop();
 }

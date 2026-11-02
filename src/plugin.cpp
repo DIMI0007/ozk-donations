@@ -1,4 +1,5 @@
 #include "dock.hpp"
+#include "telemetry.hpp"
 #include <obs-module.h>
 #include <obs-frontend-api.h>
 #include <obs.h>
@@ -14,6 +15,16 @@
 
 OBS_DECLARE_MODULE()
 OBS_MODULE_AUTHOR("DMITRII")
+extern "C" __declspec(dllexport) bool ozk_donations_telemetry_v1(std::uint64_t* tx,std::uint64_t* rx){
+    if(!tx||!rx)return false;
+    *tx=donations_telemetry::sent.load();*rx=donations_telemetry::received.load();return true;
+}
+extern "C" __declspec(dllexport) bool ozk_donations_telemetry_v2(std::uint64_t* tx,std::uint64_t* rx,
+    std::uint64_t* cpu,std::uint64_t* data){
+    if(!tx||!rx||!cpu||!data)return false;
+    *tx=donations_telemetry::sent.load();*rx=donations_telemetry::received.load();
+    *cpu=donations_telemetry::cpuNs.load();*data=donations_telemetry::dataBytes.load();return true;
+}
 namespace {
 QPointer<DonationsDock> dockPanel;
 bool exiting=false;
@@ -66,7 +77,7 @@ bool obs_module_load(void){
     if(!QSslSocket::supportsSsl()&&QSslSocket::availableBackends().contains("schannel"))
         QSslSocket::setActiveBackend("schannel");
     obs_frontend_add_event_callback(frontend,nullptr);
-    blog(LOG_INFO,"[OZK Donations] 0.4.2 loaded");return true;
+    blog(LOG_INFO,"[OZK Donations] 0.5.0 loaded");return true;
 }
 void obs_module_unload(void){
     exiting=true;obs_frontend_remove_event_callback(frontend,nullptr);
