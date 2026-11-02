@@ -14,6 +14,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
+#include <QIcon>
 #include <QPixmap>
 #include <QPainter>
 #include <QLineEdit>
@@ -34,6 +35,15 @@
 #include <cmath>
 
 namespace {
+QIcon settingsIcon() {
+    QPixmap image(48,48);image.fill(Qt::transparent);
+    QPainter painter(&image);painter.setRenderHint(QPainter::Antialiasing);painter.scale(2,2);
+    painter.setPen(QPen(QColor("#aebde3"),1.7,Qt::SolidLine,Qt::RoundCap,Qt::RoundJoin));
+    painter.setBrush(Qt::NoBrush);painter.translate(12,12);
+    for(int i=0;i<8;++i){painter.drawLine(QPointF(0,-8),QPointF(0,-10));painter.rotate(45);}
+    painter.drawEllipse(QPointF(0,0),6.8,6.8);painter.drawEllipse(QPointF(0,0),2.5,2.5);
+    painter.end();image.setDevicePixelRatio(2);return QIcon(image);
+}
 class OzkLogo final : public QWidget {
 public:
     OzkLogo(){setFixedSize(28,28);setToolTip("OZK StreamKit");}
@@ -83,6 +93,20 @@ QLabel#usdNumber {font-size:15px;font-weight:700;color:#ffd34a;}
 QPushButton {background:#192638;color:#dce9fa;border:1px solid #41536d;border-radius:5px;padding:5px 8px;min-height:17px;}
 QPushButton:hover {background:#26394d;border-color:#63809e;}
 QPushButton#plain {background:transparent;border:0;color:#9db4d6;}
+QPushButton#SettingsShortcut{color:#e1ebff;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #202a3b,stop:1 #141d2b);border:1px solid #39465d;border-radius:8px;padding:0;}
+QWidget#settingsPage,QWidget#settingsContent{background:#080f18;color:#dfe8ff;font-size:12px;}
+QWidget#settingsPage QFrame#card{background:qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #101925,stop:1 #0b131e);border:1px solid #263244;border-radius:8px;}
+QWidget#settingsPage QLabel#section{color:#edf3ff;font-size:13px;font-weight:700;}
+QWidget#settingsPage QLabel#muted{color:#8ea1c0;font-size:11px;}
+QWidget#settingsPage QPushButton{color:#e1ebff;background:qlineargradient(x1:0,y1:0,x2:0,y2:1,stop:0 #202a3b,stop:1 #141d2b);border:1px solid #39465d;border-radius:8px;min-height:20px;padding:3px 7px;font-size:12px;}
+QWidget#settingsPage QPushButton:hover{background:#26344d;border-color:#6476a0;}
+QWidget#settingsPage QPushButton:focus{border-color:#8a79ff;}
+QWidget#settingsPage QLineEdit{color:#e7eeff;background:#0c1420;border:1px solid #344865;border-radius:6px;padding:4px;font-size:12px;}
+QWidget#settingsPage QLineEdit:focus{border-color:#776af5;background:#111c2e;}
+QWidget#settingsPage QCheckBox{color:#dce7fb;spacing:6px;min-height:20px;font-size:12px;}
+QWidget#settingsPage QCheckBox::indicator{width:16px;height:16px;}
+QWidget#settingsPage QCheckBox::indicator:unchecked{border-radius:4px;background:#344357;border:1px solid #65748d;}
+QWidget#settingsPage QCheckBox::indicator:checked{border-radius:4px;background:#00d37d;border:1px solid #2ff9a0;}
 QLineEdit {background:#0b1624;color:#eef6ff;border:1px solid #38506c;border-radius:5px;padding:6px;}
 QCheckBox {spacing:6px;color:#c8daf2;}
 QScrollArea {border:0;background:transparent;}
@@ -126,8 +150,10 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* headerRow=new QHBoxLayout(header);headerRow->setContentsMargins(8,7,8,7);
     headerRow->addWidget(new OzkLogo);
     headerRow->addWidget(label("OZK Donations","title"));headerRow->addStretch();
-    auto* settings=new QPushButton(QString::fromUtf8("⚙"));settings->setToolTip(QString::fromUtf8("Настройки"));
-    settings->setFixedSize(28,26);headerRow->addWidget(settings);root->addWidget(header);
+    auto* settings=new QPushButton;settings->setObjectName("SettingsShortcut");
+    settings->setIcon(settingsIcon());settings->setIconSize(QSize(19,19));
+    settings->setToolTip(QString::fromUtf8("Настройки"));settings->setAccessibleName(settings->toolTip());
+    settings->setFixedSize(30,28);headerRow->addWidget(settings);root->addWidget(header);
     pages_=new QStackedWidget;root->addWidget(pages_,1);
     auto* home=new QWidget;home->setObjectName("homePage");auto* homeLayout=new QVBoxLayout(home);
     homeLayout->setContentsMargins(7,8,7,6);homeLayout->setSpacing(7);
@@ -156,17 +182,20 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.1"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.2"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
     auto* settingsPage=new QWidget;settingsPage->setObjectName("settingsPage");auto* settingsOuter=new QVBoxLayout(settingsPage);
-    settingsOuter->setContentsMargins(7,8,7,7);settingsOuter->setSpacing(8);
-    auto* back=new QPushButton(QString::fromUtf8("← Назад к донатам"));
-    settingsOuter->addWidget(back);
+    settingsOuter->setContentsMargins(8,8,8,8);settingsOuter->setSpacing(7);
+    auto* settingsHeader=new QHBoxLayout;settingsHeader->setSpacing(7);
+    auto* back=new QPushButton(QString::fromUtf8("← Назад"));back->setFixedWidth(70);
+    settingsHeader->addWidget(back);
+    auto* settingsTitle=label(QString::fromUtf8("Настройки"),"title");settingsHeader->addWidget(settingsTitle,1);
+    settingsOuter->addLayout(settingsHeader);
     auto* settingsScroll=new QScrollArea;settingsScroll->setWidgetResizable(true);
     auto* settingsContent=new QWidget;settingsContent->setObjectName("settingsContent");auto* settingsLayout=new QVBoxLayout(settingsContent);
-    settingsLayout->setContentsMargins(0,0,0,0);settingsLayout->setSpacing(8);
+    settingsLayout->setContentsMargins(0,0,0,0);settingsLayout->setSpacing(7);
     QVBoxLayout* daLayout=nullptr;settingsLayout->addWidget(card(&daLayout));
     daLayout->addWidget(label("DonationAlerts","section"));
     daEnabled_=new QCheckBox(QString::fromUtf8("Показывать донаты DonationAlerts"));
@@ -184,8 +213,10 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     dpLayout->addWidget(dpHint_);
     dpKey_=new QLineEdit;dpKey_->setEchoMode(QLineEdit::Password);
     dpKey_->setPlaceholderText(QString::fromUtf8("Ключ API DonatePay"));dpLayout->addWidget(dpKey_);
-    auto* saveDP=new QPushButton(QString::fromUtf8("Сохранить ключ"));dpLayout->addWidget(saveDP);
-    auto* dpHelp=new QPushButton(QString::fromUtf8("Где взять ключ DonatePay ↗"));dpLayout->addWidget(dpHelp);
+    auto* dpActions=new QHBoxLayout;dpActions->setSpacing(4);
+    auto* saveDP=new QPushButton(QString::fromUtf8("Сохранить ключ"));dpActions->addWidget(saveDP,1);
+    auto* dpHelp=new QPushButton(QString::fromUtf8("Где взять ключ?"));dpHelp->setToolTip(QString::fromUtf8("Где взять ключ DonatePay"));dpActions->addWidget(dpHelp,1);
+    dpLayout->addLayout(dpActions);
     QVBoxLayout* ratesLayout=nullptr;settingsLayout->addWidget(card(&ratesLayout));
     ratesLayout->addWidget(label(QString::fromUtf8("Курс для итогов"),"section"));
     ratesLayout->addWidget(label(QString::fromUtf8("Один сохранённый курс переводит иностранные донаты в рубли и общий итог в доллары. Это приблизительная оценка, а не сумма выплат."),"muted"));
