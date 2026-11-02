@@ -39,6 +39,19 @@ public:
     bool hasAccounts() const {return !daToken_.isEmpty()||!dpToken_.isEmpty();}
     struct Totals {QMap<QString,double> all,month;bool complete=false;};
     Totals totals(const QString& service) const {return service=="DonationAlerts"?daTotals_:dpTotals_;}
+#ifdef OZK_DONATIONS_PREVIEW
+    void previewPopulate() {
+        const auto now=QDateTime::currentDateTime();
+        entries_={
+            {"DonationAlerts","preview-1",QString::fromUtf8("Зритель"),QString::fromUtf8("Спасибо за эфир!"),"RUB",300,now.addSecs(-120),true},
+            {"DonatePay","preview-2",QString::fromUtf8("Гость"),QString::fromUtf8("Музыка: https://youtu.be/AbCdEfGh123"),"RUB",100,now.addSecs(-3600),false},
+            {"DonationAlerts","preview-3",QString::fromUtf8("Подписчик"),QString::fromUtf8("Хорошего стрима!"),"USD",5,now.addDays(-1),false}
+        };
+        daTotals_.all={{"RUB",5000},{"USD",5}};daTotals_.month={{"RUB",1200},{"USD",5}};daTotals_.complete=true;
+        dpTotals_.all={{"RUB",3200}};dpTotals_.month={{"RUB",700}};dpTotals_.complete=true;
+        Q_EMIT updated();
+    }
+#endif
 Q_SIGNALS:
     void updated();
 private:

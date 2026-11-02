@@ -281,9 +281,18 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     credentialsTimer_=new QTimer(this);credentialsTimer_->setInterval(15000);
     connect(credentialsTimer_,&QTimer::timeout,this,&DonationsDock::refreshCredentials);
     credentialsTimer_->start();loadRates();
+#ifndef OZK_DONATIONS_PREVIEW
     if(!QFileInfo::exists(ratesPath_))fetchRatesOnce();
+#endif
     refreshCredentials();
 }
+#ifdef OZK_DONATIONS_PREVIEW
+void DonationsDock::previewPopulate() {
+    rubPerUnit_.insert("USD",90.0);
+    ratesDate_=QDate::currentDate().toString(Qt::ISODate);
+    feed_.previewPopulate();
+}
+#endif
 void DonationsDock::showSettings(bool visible) {
     if(pages_->currentWidget()==player_)player_->stop();
     pages_->setCurrentIndex(visible?1:0);

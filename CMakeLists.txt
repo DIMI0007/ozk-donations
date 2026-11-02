@@ -83,3 +83,16 @@ endif()
 add_test(NAME youtube-links COMMAND ozk-youtube-links-tests)
 set_tests_properties(youtube-links PROPERTIES
   ENVIRONMENT_MODIFICATION "PATH=path_list_prepend:$<TARGET_FILE_DIR:Qt6::Core>")
+
+add_executable(ozk-donations-ui-preview tests/ui_preview.cpp
+  src/dock.cpp src/dock.hpp src/feed.cpp src/feed.hpp src/credentials.cpp src/credentials.hpp
+  src/donation_cache.cpp src/donation_cache.hpp src/youtube_links.cpp src/youtube_links.hpp
+  src/youtube_player.hpp src/brands.qrc)
+target_include_directories(ozk-donations-ui-preview PRIVATE src)
+target_link_libraries(ozk-donations-ui-preview PRIVATE
+  Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::WebSockets crypt32)
+target_compile_definitions(ozk-donations-ui-preview PRIVATE
+  OZK_DONATIONS_TEST OZK_DONATIONS_PREVIEW QT_NO_KEYWORDS WIN32_LEAN_AND_MEAN NOMINMAX)
+if(MSVC)
+  target_compile_options(ozk-donations-ui-preview PRIVATE /utf-8 /permissive-)
+endif()

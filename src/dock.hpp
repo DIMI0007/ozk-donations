@@ -21,6 +21,9 @@ class DonationsDock : public QWidget {
 public:
     explicit DonationsDock(QWidget* parent=nullptr);
     void shutdown();
+#ifdef OZK_DONATIONS_PREVIEW
+    void previewPopulate();
+#endif
 private:
     void showSettings(bool visible);
     void refreshCredentials();
