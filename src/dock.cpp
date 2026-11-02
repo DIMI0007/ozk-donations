@@ -76,7 +76,7 @@ QFrame#newDonationCard {background:#151b21;border:1px solid #d9ab3c;border-radiu
 QLabel#title {font-size:16px;font-weight:700;color:#f7fbff;}
 QLabel#section {font-size:12px;font-weight:700;color:#eaf2ff;}
 QLabel#muted {color:#9db4d6;}
-QLabel#number {font-size:19px;font-weight:700;color:#26deb0;}
+QLabel#number {font-size:16px;font-weight:700;color:#26deb0;}
 QLabel#serviceTotal {font-size:11px;color:#a8bfdc;}
 QFrame#usdBox {background:#1a1b17;border:1px solid #796130;border-radius:6px;}
 QLabel#usdNumber {font-size:15px;font-weight:700;color:#ffd34a;}
@@ -132,19 +132,17 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* home=new QWidget;home->setObjectName("homePage");auto* homeLayout=new QVBoxLayout(home);
     homeLayout->setContentsMargins(7,8,7,6);homeLayout->setSpacing(7);
     QVBoxLayout* summaryLayout=nullptr;auto* summary=card(&summaryLayout);
+    summaryLayout->setContentsMargins(9,6,9,7);summaryLayout->setSpacing(3);
     auto* summaryTitle=new QHBoxLayout;summaryTitle->setSpacing(4);
     summaryTitle->addWidget(new CoinIcon);summaryTitle->addWidget(label(QString::fromUtf8("Итоги донатов"),"section"));
-    summaryTitle->addStretch();summaryLayout->addLayout(summaryTitle);
-    auto* totalsRow=new QHBoxLayout;totalsRow->setSpacing(7);
-    auto* services=new QVBoxLayout;services->setSpacing(5);
-    daTotals_=label({},"serviceTotal");services->addWidget(daTotals_);
-    dpTotals_=label({},"serviceTotal");services->addWidget(dpTotals_);
-    totalsRow->addLayout(services,1);
+    summaryTitle->addStretch();
     auto* usdBox=new QFrame;usdBox->setObjectName("usdBox");usdBox->setFixedWidth(104);
-    auto* usdLayout=new QVBoxLayout(usdBox);usdLayout->setContentsMargins(6,5,6,5);usdLayout->setSpacing(2);
+    auto* usdLayout=new QVBoxLayout(usdBox);usdLayout->setContentsMargins(6,3,6,3);usdLayout->setSpacing(1);
     usdLayout->addWidget(label(QString::fromUtf8("ВСЕГО"),"muted"));
     combinedUsd_=label(QString::fromUtf8("—"),"usdNumber");usdLayout->addWidget(combinedUsd_);
-    totalsRow->addWidget(usdBox);summaryLayout->addLayout(totalsRow);
+    summaryTitle->addWidget(usdBox);summaryLayout->addLayout(summaryTitle);
+    daTotals_=label({},"serviceTotal");daTotals_->setWordWrap(false);summaryLayout->addWidget(daTotals_);
+    dpTotals_=label({},"serviceTotal");dpTotals_->setWordWrap(false);summaryLayout->addWidget(dpTotals_);
     total_=label(QString::fromUtf8("Новых донатов пока нет"),"number");summaryLayout->addWidget(total_);
     const auto totalsHint=QString::fromUtf8("История загружается постепенно и сохраняется на этом компьютере. Общий итог показывается после окончания загрузки. Месяц — с 1-го числа по местному времени. Разные валюты не складываются.");
     daTotals_->setToolTip(totalsHint);dpTotals_->setToolTip(totalsHint);
@@ -158,7 +156,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.0"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.1"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -370,11 +368,11 @@ void DonationsDock::render() {
     }
     auto serviceTotal=[&](const QString& service){
         const auto totals=feed_.totals(service);
-        if(!totals.complete)return QString::fromUtf8("%1\nСчитаем историю…").arg(service);
+        if(!totals.complete)return QString::fromUtf8("%1: считаем историю…").arg(service);
         const auto all=convertToRub(totals.all,rubPerUnit_);
         const auto month=convertToRub(totals.month,rubPerUnit_);
-        if(!all.complete||!month.complete)return QString::fromUtf8("%1\nНет курса одной из валют").arg(service);
-        return QString::fromUtf8("%1\n%2 всего · %3 мес.")
+        if(!all.complete||!month.complete)return QString::fromUtf8("%1: нет курса одной из валют").arg(service);
+        return QString::fromUtf8("%1: %2 всего · %3/мес.")
             .arg(service,compactRub(all.amount,all.converted),compactRub(month.amount,month.converted));
     };
     daTotals_->setVisible(credentials_.daEnabled);dpTotals_->setVisible(credentials_.dpEnabled);

@@ -26,7 +26,7 @@
 
 ## Как установить
 
-Поддерживается Windows x64 и OBS Studio 33. Скачайте [архив версии 0.5.0](https://github.com/DIMI0007/ozk-donations/releases/tag/v0.5.0), скопируйте папку `ozk-donations` из архива в `C:\ProgramData\obs-studio\plugins\`. Затем откройте OBS: панель появится в меню «Док-панели» → «OZK Donations». Если OBS открыт, закройте его до копирования файлов.
+Поддерживается Windows x64 и OBS Studio 33. Скачайте [архив версии 0.5.1](https://github.com/DIMI0007/ozk-donations/releases/tag/v0.5.1), скопируйте папку `ozk-donations` из архива в `C:\ProgramData\obs-studio\plugins\`. Затем откройте OBS: панель появится в меню «Док-панели» → «OZK Donations». Если OBS открыт, закройте его до копирования файлов.
 
 Обе службы работают независимо. OZK Notify для работы этой панели не обязателен.
 
