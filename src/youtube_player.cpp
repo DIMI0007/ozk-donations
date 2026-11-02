@@ -115,7 +115,7 @@ function onYouTubeIframeAPIReady(){
   const frame=document.getElementById('player');
   frame.src='https://www.youtube-nocookie.com/embed/'+videoId+
     '?enablejsapi=1&playsinline=1&autoplay=1&origin='+encodeURIComponent(location.origin);
-  new YT.Player(frame,{events:{onReady:e=>{notify('ready');e.target.playVideo();},
+  new YT.Player('player',{events:{onReady:e=>{notify('ready');e.target.playVideo();},
       onStateChange:e=>{if(e.data===YT.PlayerState.PLAYING){playing=true;notify('playing');}
         if(e.data===YT.PlayerState.ENDED)notify('ended');},
       onError:e=>notify('error:'+e.data),onAutoplayBlocked:()=>notify('blocked')}});
