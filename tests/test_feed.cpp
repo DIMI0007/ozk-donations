@@ -3,6 +3,7 @@
 #include "donation_cache.hpp"
 #include "currency_conversion.hpp"
 #include "manual_services.hpp"
+#include "donatepay_reply.hpp"
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -92,5 +93,9 @@ int main(int argc,char** argv){
     assert(manualServiceTotal(loadManualServices(manualPath))==10000);
     assert(parseManualServices(QJsonArray{QJsonObject{{"id","bad"},{"name","Bad"},{"kopecks",1.5}}}).isEmpty());
     assert(saveManualServices(manualPath,{}));assert(loadManualServices(manualPath).isEmpty());
+    assert(sn::parseDonatePayReply(200,R"({"status":429})").rateLimited);
+    assert(!sn::parseDonatePayReply(200,R"({"status":"error","message":"Temporary error"})").ok);
+    const auto latest=sn::parseDonatePayReply(200,R"({"status":"success","data":[{"id":36650809,"sum":5000,"currency":"RUB","type":"donation","status":"success","created_at":"2026-11-03 12:58:14"}]})");
+    assert(latest.ok&&latest.rows.size()==1);const auto missed=parseDP(latest.rows[0].toObject());assert(missed.valid()&&missed.amount==5000);
     return 0;
 }

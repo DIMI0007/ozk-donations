@@ -1,4 +1,5 @@
 #include "feed.hpp"
+#include "donatepay_reply.hpp"
 #include "donation_cache.hpp"
 #include "telemetry.hpp"
 #include <QJsonArray>
@@ -358,30 +359,24 @@ void DonationFeed::pollDP() {
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto bytes=reply->readAll();const auto retryAfter=reply->rawHeader("Retry-After");
         reply->deleteLater();if(closing_||epoch!=dpEpoch_)return;
-        const auto body=QJsonDocument::fromJson(bytes).object();
-        const auto status=body.value("status").toString();
-        if(code==401||code==403||status=="error"){
-            setStatus(dpStatus_,QString::fromUtf8("Проверьте ключ"));return;
+        const auto response=sn::parseDonatePayReply(code,bytes);
+        if(!response.ok){
+            const bool invalidKey=code==401||code==403||response.status=="Incorrect DonatePay API key";
+            setStatus(dpStatus_,invalidKey?QString::fromUtf8("Проверьте ключ"):QString::fromUtf8("Переподключение…"));
+            if(invalidKey)return;
+            dpFailures_=std::min(dpFailures_+1,3);int delay=30000*(1<<dpFailures_);
+            if(response.rateLimited){bool ok=false;const double seconds=retryAfter.toDouble(&ok);
+                if(ok&&std::isfinite(seconds)&&seconds>0)delay=std::max(delay,int(std::min(seconds,3600.0)*1000));}
+            dpTimer_.start(delay);
+            qWarning()<<"[OZK Donations] DonatePay retry scheduled; HTTP"<<code<<"rate limited"<<response.rateLimited<<"delay ms"<<delay;
+            return;
         }
-        if(code!=200||body.isEmpty()){
-            setStatus(dpStatus_,QString::fromUtf8("Переподключение…"));
-            dpFailures_=std::min(dpFailures_+1,3);
-            int delay=30000*(1<<dpFailures_);
-            if(code==429){bool ok=false;const int seconds=retryAfter.toInt(&ok);
-                if(ok&&seconds>0)delay=std::max(delay,std::min(seconds,3600)*1000);}
-            dpTimer_.start(std::min(delay,3600000));return;
-        }
-        QJsonArray rows=body.value("data").toArray();
-        if(rows.isEmpty()&&body.value("data").isObject())rows=body.value("data").toObject().value("data").toArray();
-        if(rows.isEmpty())rows=body.value("transactions").toArray();
-        if(!body.value("data").isArray()&&!body.value("data").isObject()&&!body.value("transactions").isArray()){
-            setStatus(dpStatus_,QString::fromUtf8("Неизвестный ответ API"));return;
-        }
+        const auto rows=response.rows;
         for(const auto& row:rows)if(row.isObject()){
             auto donation=parseDP(row.toObject());
             donation.session=occurredThisSession(donation,startedAt_);
             add(donation);
-            if(!dpTotalsStarted_||dpTotals_.complete)collectTotal(donation);
+            collectTotal(donation); // Stable transaction IDs deduplicate polling and history.
         }
         if(!dpTotalsStarted_){
             dpTotalsStarted_=true;
@@ -409,13 +404,11 @@ void DonationFeed::fetchDPHistory(int skip) {
         const int code=reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const auto bytes=reply->readAll();reply->deleteLater();
         if(closing_||token!=dpToken_)return;
-        const auto body=QJsonDocument::fromJson(bytes).object();
-        auto rows=body.value("data").toArray();
-        if(rows.isEmpty()&&body.value("data").isObject())rows=body.value("data").toObject().value("data").toArray();
-        if(rows.isEmpty())rows=body.value("transactions").toArray();
-        if(code!=200||(!body.value("data").isArray()&&!body.value("data").isObject()&&!body.value("transactions").isArray())){
+        const auto response=sn::parseDonatePayReply(code,bytes);
+        if(!response.ok){
             QTimer::singleShot(60000,this,[this,token,skip]{if(!closing_&&token==dpToken_)fetchDPHistory(skip);});return;
         }
+        const auto rows=response.rows;
         const int before=dpTotalIds_.size();
         for(const auto& row:rows)if(row.isObject())collectTotal(parseDP(row.toObject()));
         dpNextSkip_=skip+100;saveTotalsCache();
