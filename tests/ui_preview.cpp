@@ -2,6 +2,9 @@
 #include "youtube_player.hpp"
 
 #include <QApplication>
+#include <QDialog>
+#include <QLabel>
+#include <QTimer>
 #include <QDir>
 #include <QFont>
 #include <QPushButton>
@@ -44,6 +47,16 @@ int main(int argc,char** argv) {
     if(!scroll)return 7;
     scroll->verticalScrollBar()->setValue(scroll->verticalScrollBar()->maximum());app.processEvents();
     if(!dock.grab().save(output+"/settings-bottom-360.png"))return 8;
+    dock.previewManualServices({{"one","Other A",100000},{"two","Other B",200000}});app.processEvents();
+    auto* other=dock.findChild<QLabel*>("otherServiceTotal");auto* usd=dock.findChild<QLabel*>("combinedUsdTotal");
+    if(!other||other->text().contains("Other A")||!usd||!usd->text().contains("129"))return 12;
+    if(!dock.grab().save(output+"/manual-settings-360.png"))return 13;
+    auto* add=dock.findChild<QPushButton*>("addManualService");if(!add||!add->isVisible())return 14;
+    bool dialogSaved=false;QTimer::singleShot(0,&dock,[&]{auto* modal=qobject_cast<QDialog*>(QApplication::activeModalWidget());
+        if(modal){dialogSaved=modal->grab().save(output+"/manual-add-dialog.png");modal->reject();}});
+    add->click();if(!dialogSaved)return 15;
+    gear->click();app.processEvents();if(add->isVisible())return 16;
+    if(!dock.grab().save(output+"/manual-home-360.png"))return 17;
     dock.shutdown();
     return 0;
 }

@@ -1,5 +1,6 @@
 #pragma once
 #include "feed.hpp"
+#include "manual_services.hpp"
 #include "oauth_loopback.hpp"
 #include <QPointer>
 #include <QMap>
@@ -26,6 +27,7 @@ public:
     void shutdown();
 #ifdef OZK_DONATIONS_PREVIEW
     void previewPopulate();
+    void previewManualServices(const QVector<ManualService>& rows){manualServices_=rows;rebuildManualServices();render();}
 #endif
 private:
     void showSettings(bool visible);
@@ -37,6 +39,14 @@ private:
     QByteArray credentialFiles_,listSignature_;
     QHash<QString,QWidget*> rows_;
     void beginDALogin();
+    void editManualService(int index=-1);
+    void rebuildManualServices();
+    void persistManualServices(const QVector<ManualService>& next);
+    QVector<ManualService> manualServices_;
+    QVBoxLayout* manualList_=nullptr;
+    QWidget* manualBox_=nullptr;
+    QLabel* otherTotals_=nullptr;
+    QString manualPath_;
     void openVideo(const QString& id);
     void loadRates();
     void fetchRatesOnce();

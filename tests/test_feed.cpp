@@ -2,6 +2,7 @@
 #include "credentials.hpp"
 #include "donation_cache.hpp"
 #include "currency_conversion.hpp"
+#include "manual_services.hpp"
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -80,5 +81,16 @@ int main(int argc,char** argv){
     assert(loadProtectedDonationJson(totalsCache)==totalsData);
     QFile encryptedTotals(totalsCache);assert(encryptedTotals.open(QIODevice::ReadOnly));
     assert(!encryptedTotals.readAll().contains("1234.5"));
+    const auto manualPath=dir.filePath("manual-services.json");
+    const QVector<ManualService> manual{{"one","Other A",123456},{"two","Other B",789}};
+    assert(manualServiceTotal(manual)==124245);
+    assert(saveManualServices(manualPath,manual));
+    const auto loaded=loadManualServices(manualPath);assert(loaded.size()==2&&loaded[0].name=="Other A"&&manualServiceTotal(loaded)==124245);
+    auto changed=loaded;changed[0].kopecks=10000;changed.removeLast();assert(saveManualServices(manualPath,changed));
+    assert(manualServiceTotal(loadManualServices(manualPath))==10000);
+    changed[0].kopecks=-1;assert(!saveManualServices(manualPath,changed));
+    assert(manualServiceTotal(loadManualServices(manualPath))==10000);
+    assert(parseManualServices(QJsonArray{QJsonObject{{"id","bad"},{"name","Bad"},{"kopecks",1.5}}}).isEmpty());
+    assert(saveManualServices(manualPath,{}));assert(loadManualServices(manualPath).isEmpty());
     return 0;
 }

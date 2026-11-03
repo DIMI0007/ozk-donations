@@ -36,6 +36,12 @@
 #include <cmath>
 #include <QDataStream>
 #include <QScrollBar>
+#include <QDialog>
+#include <QDialogButtonBox>
+#include <QDoubleSpinBox>
+#include <QFormLayout>
+#include <QUuid>
+#include <QMessageBox>
 
 namespace {
 QIcon settingsIcon() {
@@ -169,10 +175,12 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* usdBox=new QFrame;usdBox->setObjectName("usdBox");usdBox->setFixedWidth(104);
     auto* usdLayout=new QVBoxLayout(usdBox);usdLayout->setContentsMargins(6,3,6,3);usdLayout->setSpacing(1);
     usdLayout->addWidget(label(QString::fromUtf8("ВСЕГО"),"muted"));
-    combinedUsd_=label(QString::fromUtf8("—"),"usdNumber");usdLayout->addWidget(combinedUsd_);
+    combinedUsd_=label(QString::fromUtf8("—"),"usdNumber");combinedUsd_->setObjectName("combinedUsdTotal");usdLayout->addWidget(combinedUsd_);
     summaryTitle->addWidget(usdBox);summaryLayout->addLayout(summaryTitle);
     daTotals_=label({},"serviceTotal");daTotals_->setWordWrap(false);summaryLayout->addWidget(daTotals_);
     dpTotals_=label({},"serviceTotal");dpTotals_->setWordWrap(false);summaryLayout->addWidget(dpTotals_);
+    otherTotals_=label({},"serviceTotal");otherTotals_->setObjectName("otherServiceTotal");summaryLayout->addWidget(otherTotals_);
+    otherTotals_->setToolTip(QString::fromUtf8("Сумма за всё время, добавленная вручную. Учтена в общем итоге в долларах, но не в новых донатах или итогах за месяц."));
     total_=label(QString::fromUtf8("Новых донатов пока нет"),"number");summaryLayout->addWidget(total_);
     const auto totalsHint=QString::fromUtf8("История загружается постепенно и сохраняется на этом компьютере. Общий итог показывается после окончания загрузки. Месяц — с 1-го числа по местному времени. Разные валюты не складываются.");
     daTotals_->setToolTip(totalsHint);dpTotals_->setToolTip(totalsHint);
@@ -186,7 +194,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.4"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.6.0"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -221,6 +229,13 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* saveDP=new QPushButton(QString::fromUtf8("Сохранить ключ"));dpActions->addWidget(saveDP,1);
     auto* dpHelp=new QPushButton(QString::fromUtf8("Где взять ключ?"));dpHelp->setToolTip(QString::fromUtf8("Где взять ключ DonatePay"));dpActions->addWidget(dpHelp,1);
     dpLayout->addLayout(dpActions);
+    QVBoxLayout* manualLayout=nullptr;manualBox_=card(&manualLayout);settingsLayout->addWidget(manualBox_);
+    auto* manualHeader=new QHBoxLayout;manualHeader->addWidget(label(QString::fromUtf8("Донаты от других сервисов"),"section"),1);
+    auto* addManual=new QPushButton("+");addManual->setObjectName("addManualService");addManual->setFixedSize(30,28);
+    addManual->setToolTip(QString::fromUtf8("Добавить сервис вручную"));manualHeader->addWidget(addManual);manualLayout->addLayout(manualHeader);
+    manualLayout->addWidget(label(QString::fromUtf8("Ручной ввод общей суммы за всё время в рублях. Эти суммы войдут в общий итог в долларах по сохранённому курсу."),"muted"));
+    manualList_=new QVBoxLayout;manualList_->setSpacing(4);manualLayout->addLayout(manualList_);
+    connect(addManual,&QPushButton::clicked,this,[this]{editManualService();});
     QVBoxLayout* ratesLayout=nullptr;settingsLayout->addWidget(card(&ratesLayout));
     ratesLayout->addWidget(label(QString::fromUtf8("Курс для итогов"),"section"));
     ratesLayout->addWidget(label(QString::fromUtf8("Один сохранённый курс переводит иностранные донаты в рубли и общий итог в доллары. Это приблизительная оценка, а не сумма выплат."),"muted"));
@@ -292,6 +307,13 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     if(!QFileInfo::exists(ratesPath_))fetchRatesOnce();
 #endif
     credentialsWorker_.setMaxThreadCount(1);
+    manualPath_=QFileInfo(ownPath_).dir().filePath("manual-services.json");rebuildManualServices();
+#ifndef OZK_DONATIONS_PREVIEW
+    const auto manualPath=manualPath_;
+    credentialsWorker_.start([this,manualPath]{const auto rows=loadManualServices(manualPath);
+        QMetaObject::invokeMethod(this,[this,rows]{if(closing_)return;manualServices_=rows;rebuildManualServices();render();},Qt::QueuedConnection);
+    });
+#endif
 #ifndef OZK_DONATIONS_PREVIEW
     refreshCredentials();
 #endif
@@ -444,11 +466,17 @@ void DonationsDock::render() {ozkperf::Scope perf(Q_FUNC_INFO);
             .arg(sums(totals.all),sums(totals.month),ratesDate_);
     };
     daTotals_->setToolTip(detail("DonationAlerts"));dpTotals_->setToolTip(detail("DonatePay"));
+    const qint64 manualKopecks=manualServiceTotal(manualServices_);
+    otherTotals_->setVisible(!manualServices_.isEmpty());
+    otherTotals_->setText(QString::fromUtf8("Донаты с других сервисов: %1 ₽").arg(QLocale(QLocale::Russian,QLocale::Russia).toString(double(manualKopecks)/100.0,'f',manualKopecks%100?2:0)));
     QMap<QString,double> combined;
-    bool totalsReady=true,anyService=false;
+    bool totalsReady=true,anyService=!manualServices_.isEmpty();
+    combined["RUB"]=double(manualKopecks)/100.0;
     for(const auto& service:{QString("DonationAlerts"),QString("DonatePay")}){
         if(service=="DonationAlerts"?!credentials_.daEnabled:!credentials_.dpEnabled)continue;
-        anyService=true;const auto totals=feed_.totals(service);
+        const auto totals=feed_.totals(service);
+        if((service=="DonationAlerts"?credentials_.da.isEmpty():credentials_.dp.isEmpty())&&!totals.complete)continue;
+        anyService=true;
         if(!totals.complete){totalsReady=false;continue;}
         for(auto it=totals.all.cbegin();it!=totals.all.cend();++it)combined[it.key()]+=it.value();
     }
@@ -538,6 +566,48 @@ void DonationsDock::render() {ozkperf::Scope perf(Q_FUNC_INFO);
         QTimer::singleShot(0,this,[this]{renderPending_=false;listSignature_.clear();render();});
     }
 }
+
+void DonationsDock::rebuildManualServices(){
+    while(auto* item=manualList_->takeAt(0)){delete item->widget();delete item;}
+    if(manualServices_.isEmpty()){manualList_->addWidget(label(QString::fromUtf8("Сервисы пока не добавлены. Нажмите +."),"muted"));return;}
+    for(int i=0;i<manualServices_.size();++i){const auto& service=manualServices_[i];
+        auto* row=new QWidget;auto* layout=new QHBoxLayout(row);layout->setContentsMargins(0,0,0,0);layout->setSpacing(4);
+        layout->addWidget(label(service.name+" · "+QLocale(QLocale::Russian,QLocale::Russia).toString(double(service.kopecks)/100,'f',service.kopecks%100?2:0)+QString::fromUtf8(" ₽")),1);
+        auto* edit=new QPushButton(QString::fromUtf8("Изменить"));layout->addWidget(edit);
+        auto* remove=new QPushButton(QString::fromUtf8("×"));remove->setFixedWidth(28);remove->setToolTip(QString::fromUtf8("Удалить сервис"));layout->addWidget(remove);
+        connect(edit,&QPushButton::clicked,this,[this,i]{editManualService(i);});
+        connect(remove,&QPushButton::clicked,this,[this,i]{
+            if(QMessageBox::question(this,QString::fromUtf8("Удалить сервис?"),QString::fromUtf8("Удалить ручную запись и исключить её сумму из общего итога?"))!=QMessageBox::Yes)return;
+            auto next=manualServices_;next.removeAt(i);persistManualServices(next);
+        });manualList_->addWidget(row);
+    }
+}
+void DonationsDock::editManualService(int index){
+    if(index<0&&manualServices_.size()>=100){settingsMessage_->setText(QString::fromUtf8("Можно добавить до 100 сервисов."));return;}
+    QDialog dialog(this);dialog.setWindowTitle(QString::fromUtf8(index<0?"Добавить сервис":"Изменить сервис"));dialog.setStyleSheet(QString::fromUtf8(dockStyle));dialog.setMinimumWidth(300);dialog.setStyleSheet(dialog.styleSheet()+"QDialog QLineEdit,QDialog QDoubleSpinBox{background:#0c1420;color:#e7eeff;border:1px solid #344865;border-radius:6px;padding:5px;min-height:22px;}");
+    auto* layout=new QVBoxLayout(&dialog);auto* form=new QFormLayout;form->setRowWrapPolicy(QFormLayout::WrapAllRows);
+    auto* name=new QLineEdit;name->setMaxLength(80);name->setObjectName("manualServiceName");name->setPlaceholderText(QString::fromUtf8("Название донатного сервиса"));
+    auto* amount=new QDoubleSpinBox;amount->setObjectName("manualServiceAmount");amount->setLocale(QLocale(QLocale::Russian,QLocale::Russia));amount->setDecimals(2);amount->setRange(0,1e12);amount->setGroupSeparatorShown(true);amount->setSuffix(QString::fromUtf8(" ₽"));
+    if(index>=0){name->setText(manualServices_[index].name);amount->setValue(double(manualServices_[index].kopecks)/100);}
+    form->addRow(QString::fromUtf8("Название сервиса"),name);form->addRow(QString::fromUtf8("Получено за всё время, ₽"),amount);layout->addLayout(form);
+    auto* buttons=new QDialogButtonBox(QDialogButtonBox::Save|QDialogButtonBox::Cancel);buttons->button(QDialogButtonBox::Save)->setText(QString::fromUtf8("Сохранить"));buttons->button(QDialogButtonBox::Cancel)->setText(QString::fromUtf8("Отмена"));layout->addWidget(buttons);
+    buttons->button(QDialogButtonBox::Save)->setEnabled(!name->text().trimmed().isEmpty());
+    connect(name,&QLineEdit::textChanged,&dialog,[buttons](const QString& text){buttons->button(QDialogButtonBox::Save)->setEnabled(!text.trimmed().isEmpty());});
+    connect(buttons,&QDialogButtonBox::accepted,&dialog,&QDialog::accept);connect(buttons,&QDialogButtonBox::rejected,&dialog,&QDialog::reject);
+    if(dialog.exec()!=QDialog::Accepted)return;
+    auto next=manualServices_;ManualService value{index<0?QUuid::createUuid().toString(QUuid::WithoutBraces):next[index].id,name->text().trimmed(),qint64(std::llround(amount->value()*100))};
+    if(index<0)next.append(value);else next[index]=value;persistManualServices(next);
+}
+void DonationsDock::persistManualServices(const QVector<ManualService>& next){
+    manualBox_->setEnabled(false);const auto path=manualPath_;
+    credentialsWorker_.start([this,path,next]{const bool ok=saveManualServices(path,next);
+        QMetaObject::invokeMethod(this,[this,next,ok]{if(closing_)return;manualBox_->setEnabled(true);
+            if(!ok){settingsMessage_->setText(QString::fromUtf8("Не удалось сохранить ручные суммы. Предыдущие данные сохранены."));return;}
+            manualServices_=next;rebuildManualServices();render();settingsMessage_->setText(QString::fromUtf8("Ручные суммы сохранены."));
+        },Qt::QueuedConnection);
+    });
+}
+
 DonationsDock::~DonationsDock() { shutdown(); }
 void DonationsDock::shutdown() {
     if(closing_)return;
