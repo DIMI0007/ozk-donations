@@ -26,7 +26,8 @@ int main(int argc,char** argv) {
     dock.previewPopulate();app.processEvents();
     auto* firstRow=dock.findChild<QWidget*>("newDonationCard");
     if(!firstRow)return 9;
-    for(int i=0;i<100;++i)dock.previewPopulate();
+    auto* feed=dock.findChild<DonationFeed*>();if(!feed)return 11;
+    for(int i=0;i<100;++i)QMetaObject::invokeMethod(feed,"updated",Qt::DirectConnection);
     app.processEvents();
     if(dock.findChild<QWidget*>("newDonationCard")!=firstRow)return 10;
     if(!dock.grab().save(output+"/home-360.png"))return 2;
