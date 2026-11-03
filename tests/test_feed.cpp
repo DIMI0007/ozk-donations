@@ -4,6 +4,7 @@
 #include "currency_conversion.hpp"
 #include "manual_services.hpp"
 #include "donatepay_reply.hpp"
+#include "donation_bridge.hpp"
 #include <QCoreApplication>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -11,10 +12,53 @@
 #include <QFile>
 #include <QDir>
 #include <QFileInfo>
+#include <QElapsedTimer>
 #include <cassert>
+
+struct DonationFeedTest {
+    static void independentStartup() {
+        DonationFeed feed;DonationCredentials c;c.dp="test-startup";
+        feed.configure(c);QElapsedTimer wait;wait.start();
+        while(!feed.bridgeReady_&&wait.elapsed()<2000){QCoreApplication::processEvents();QThread::msleep(1);}
+        assert(feed.bridgeReady_&&feed.dpTimer_.isActive());
+        feed.daToken_="test-da-reconnect";feed.retryDA();
+        assert(feed.dpTimer_.isActive()); // Previously the delayed DP callback used daEpoch_.
+        feed.stop(); // No network call; stop both startup/reconnect timers before expiry.
+    }
+    static void bridge() {
+        DonationFeed feed;
+        feed.dpToken_="test-account";feed.bridgeReady_=true;feed.dpTotals_.complete=true;
+        const auto row=QJsonObject{{"id","synthetic-5000"},{"what","Test donor"},
+            {"comment","Test message"},{"sum",5000},{"currency","RUB"},
+            {"type","donation"},{"status","success"},
+            {"created_at",QDateTime::currentDateTimeUtc().addSecs(1).toString(Qt::ISODate)},
+            {"access_token","must-not-cross-bridge"}};
+        ozk_bridge::publishDP("test-account",{row});QCoreApplication::processEvents();
+        assert(feed.entries().size()==1&&feed.entries()[0].donor=="Test donor");
+        assert(feed.entries()[0].message=="Test message"&&feed.entries()[0].session);
+        assert(feed.totals("DonatePay").all.value("RUB")==5000);
+        assert(!QCoreApplication::instance()->property(ozk_bridge::dpProperty).toByteArray().contains("must-not-cross-bridge"));
+        assert(ozk_bridge::readDP("another-account").isEmpty());
+        // API polling/history and Notify deliver the same ID: one card and one total.
+        auto duplicate=parseDP(row);feed.add(duplicate);feed.collectTotal(duplicate);
+        feed.readNotifyDonations();
+        assert(feed.entries().size()==1&&feed.totals("DonatePay").all.value("RUB")==5000);
+        auto pending=row;pending["id"]="pending";pending["status"]="pending";
+        ozk_bridge::publishDP("test-account",{row,pending});QCoreApplication::processEvents();
+        assert(feed.entries().size()==1&&feed.totals("DonatePay").all.value("RUB")==5000);
+        // A consumer starting after Notify still sees the snapshot, without a request.
+        DonationFeed late;late.dpToken_="test-account";late.bridgeReady_=true;late.readNotifyDonations();
+        assert(late.entries().size()==1&&late.entries()[0].amount==5000);
+        feed.stop();auto second=row;second["id"]="after-stop";
+        ozk_bridge::publishDP("test-account",{second});QCoreApplication::processEvents();
+        assert(feed.entries().size()==1);
+    }
+};
 
 int main(int argc,char** argv){
     QCoreApplication app(argc,argv);
+    DonationFeedTest::bridge();
+    DonationFeedTest::independentStartup();
     const auto converted=convertToRub({{"RUB",100.0},{"USD",2.0}},{{"USD",90.0}});
     assert(converted.complete&&converted.converted&&converted.amount==280.0);
     const auto missingRate=convertToRub({{"RUB",100.0},{"KZT",1000.0}},{{"USD",90.0}});
@@ -95,7 +139,7 @@ int main(int argc,char** argv){
     assert(saveManualServices(manualPath,{}));assert(loadManualServices(manualPath).isEmpty());
     assert(sn::parseDonatePayReply(200,R"({"status":429})").rateLimited);
     assert(!sn::parseDonatePayReply(200,R"({"status":"error","message":"Temporary error"})").ok);
-    const auto latest=sn::parseDonatePayReply(200,R"({"status":"success","data":[{"id":36650809,"sum":5000,"currency":"RUB","type":"donation","status":"success","created_at":"2026-11-03 12:58:14"}]})");
+    const auto latest=sn::parseDonatePayReply(200,R"({"status":"success","data":[{"id":990001,"sum":5000,"currency":"RUB","type":"donation","status":"success","created_at":"2026-11-03 12:58:14"}]})");
     assert(latest.ok&&latest.rows.size()==1);const auto missed=parseDP(latest.rows[0].toObject());assert(missed.valid()&&missed.amount==5000);
     return 0;
 }

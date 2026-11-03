@@ -5,6 +5,6 @@
     "qt6": {"version":"2026-10-23","baseUrl":"https://github.com/obsproject/obs-deps/releases/download","label":"Pre-Built Qt6","hashes":{"windows-x64":"78cd7a138464bb6edcdd3b85fcd63a5a7c69e369629963f3bc395bab74fb3f47"}}
   },
   "platformConfig":{"macos":{"bundleId":"com.otmopozok.ozkdonations"}},
-  "name":"ozk-donations","displayName":"OZK Donations","version":"0.6.1",
+  "name":"ozk-donations","displayName":"OZK Donations","version":"0.6.2",
   "author":"DMITRII","website":"https://github.com/DIMI0007/ozk-donations","email":""
 }

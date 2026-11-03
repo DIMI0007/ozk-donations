@@ -57,6 +57,12 @@ public:
 Q_SIGNALS:
     void updated();
 private:
+#ifdef OZK_DONATIONS_TEST
+    friend struct DonationFeedTest;
+#endif
+    bool eventFilter(QObject* watched,QEvent* event) override;
+    void readNotifyDonations();
+    bool bridgeReady_=false,bridgeQueued_=false;
     void connectDA();
     void subscribeDA(const QString& client);
     void receiveDA(const QString& text);

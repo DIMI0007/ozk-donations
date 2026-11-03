@@ -1,5 +1,7 @@
 #include "feed.hpp"
 #include "donatepay_reply.hpp"
+#include "donation_bridge.hpp"
+#include <QDynamicPropertyChangeEvent>
 #include "donation_cache.hpp"
 #include "telemetry.hpp"
 #include <QJsonArray>
@@ -84,6 +86,7 @@ bool occurredThisSession(const DonationEntry& entry,const QDateTime& startedAt) 
     return entry.at.isValid()&&startedAt.isValid()&&entry.at.toUTC()>=startedAt.toUTC();
 }
 DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
+    if(auto* app=QCoreApplication::instance())app->installEventFilter(this);
     daRetry_.setSingleShot(true);dpTimer_.setSingleShot(true);cacheTimer_.setSingleShot(true);
     cacheWorker_.setMaxThreadCount(1);
     cacheTimer_.setInterval(1200);
@@ -106,6 +109,25 @@ DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
     });
 }
 DonationFeed::~DonationFeed() { stop();cacheWorker_.waitForDone(); }
+bool DonationFeed::eventFilter(QObject* watched,QEvent* event) {
+    if(watched==QCoreApplication::instance()&&event->type()==QEvent::DynamicPropertyChange&&
+       static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName()==ozk_bridge::dpProperty&&
+       !bridgeQueued_){
+        bridgeQueued_=true;
+        QTimer::singleShot(0,this,[this]{bridgeQueued_=false;readNotifyDonations();});
+    }
+    return QObject::eventFilter(watched,event);
+}
+void DonationFeed::readNotifyDonations() {
+    if(closing_||!bridgeReady_||dpToken_.isEmpty())return;
+    const auto rows=ozk_bridge::readDP(dpToken_);
+    const int before=dpTotalIds_.size();
+    for(const auto& row:rows){
+        auto entry=parseDP(row.toObject());entry.session=occurredThisSession(entry,startedAt_);
+        add(entry);collectTotal(entry);
+    }
+    if(dpTotalIds_.size()!=before){saveTotalsCache();Q_EMIT updated();}
+}
 void DonationFeed::setStatus(QString& target,const QString& value) {
     if(target!=value){target=value;Q_EMIT updated();}
 }
@@ -115,6 +137,7 @@ void DonationFeed::configure(const DonationCredentials& c) {
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
     if(totalsCacheTimer_.isActive()){totalsCacheTimer_.stop();writeTotalsCache();}
     ++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
+    bridgeReady_=false;
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
     daToken_=c.da;dpToken_=c.dp;closing_=false;daFailures_=dpFailures_=0;
     daHistoryPermissionNeeded_=false;daHistoryChecked_=false;
@@ -132,8 +155,11 @@ void DonationFeed::configure(const DonationCredentials& c) {
             if(closing_||epoch!=daEpoch_)return;
             restoreTotalsCache(totals);
             for(const auto& entry:entries){entries_.append(entry);seen_.insert(entry.service+":"+entry.id);}
+            bridgeReady_=true;readNotifyDonations();
             if(!daToken_.isEmpty())connectDA();
-            if(!dpToken_.isEmpty())QTimer::singleShot(350,this,[this,epoch]{if(!closing_&&epoch==daEpoch_)pollDP();});
+            // This timer belongs to DonatePay. A DonationAlerts reconnect changes
+            // daEpoch_ independently and must never cancel DonatePay startup.
+            if(!dpToken_.isEmpty())dpTimer_.start(350);
             Q_EMIT updated();
         },Qt::QueuedConnection);
     });
