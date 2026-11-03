@@ -201,7 +201,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* settingsPage=new QWidget;settingsPage->setObjectName("settingsPage");auto* settingsOuter=new QVBoxLayout(settingsPage);
     settingsOuter->setContentsMargins(8,8,8,8);settingsOuter->setSpacing(7);
     auto* settingsHeader=new QHBoxLayout;settingsHeader->setSpacing(7);
-    auto* back=new QPushButton(QString::fromUtf8("← Назад"));back->setFixedWidth(70);
+    auto* back=new QPushButton(QString::fromUtf8("← Назад"));back->setObjectName("settingsBack");back->setFixedWidth(70);
     settingsHeader->addWidget(back);
     auto* settingsTitle=label(QString::fromUtf8("Настройки"),"title");settingsHeader->addWidget(settingsTitle,1);
     settingsOuter->addLayout(settingsHeader);

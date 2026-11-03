@@ -2,6 +2,7 @@
 #include "youtube_player.hpp"
 
 #include <QApplication>
+#include <cstdio>
 #include <QDialog>
 #include <QLabel>
 #include <QTimer>
@@ -19,7 +20,7 @@ bool YouTubePlayer::play(const QString&) {return false;}
 void YouTubePlayer::stop() {}
 void YouTubePlayer::resizeEvent(QResizeEvent* event) {QWidget::resizeEvent(event);}
 
-int main(int argc,char** argv) {
+int runPreview(int argc,char** argv) {
     QApplication app(argc,argv);
     app.setFont(QFont("Segoe UI",9));
     const QString output=argc>1?QString::fromLocal8Bit(argv[1]):"ui-previews";
@@ -55,8 +56,11 @@ int main(int argc,char** argv) {
     bool dialogSaved=false;QTimer::singleShot(0,&dock,[&]{auto* modal=qobject_cast<QDialog*>(QApplication::activeModalWidget());
         if(modal){dialogSaved=modal->grab().save(output+"/manual-add-dialog.png");modal->reject();}});
     add->click();if(!dialogSaved)return 15;
-    gear->click();app.processEvents();if(add->isVisible())return 16;
+    auto* back=dock.findChild<QPushButton*>("settingsBack");if(!back)return 18;
+    back->click();app.processEvents();if(add->isVisible())return 16;
     if(!dock.grab().save(output+"/manual-home-360.png"))return 17;
     dock.shutdown();
     return 0;
 }
+
+int main(int argc,char** argv){const int result=runPreview(argc,argv);std::fprintf(stderr,"UI preview result: %d\n",result);return result;}
