@@ -96,9 +96,9 @@ QLabel#title {font-size:16px;font-weight:700;color:#f7fbff;}
 QLabel#section {font-size:12px;font-weight:700;color:#eaf2ff;}
 QLabel#muted {color:#9db4d6;}
 QLabel#number {font-size:16px;font-weight:700;color:#26deb0;}
-QLabel#serviceTotal {font-size:11px;color:#a8bfdc;}
+QLabel#serviceTotal,QLabel#otherServiceTotal {font-size:11px;color:#a8bfdc;}
 QFrame#usdBox {background:#1a1b17;border:1px solid #796130;border-radius:6px;}
-QLabel#usdNumber {font-size:15px;font-weight:700;color:#ffd34a;}
+QLabel#usdNumber,QLabel#combinedUsdTotal {font-size:15px;font-weight:700;color:#ffd34a;}
 QPushButton {background:#192638;color:#dce9fa;border:1px solid #41536d;border-radius:5px;padding:5px 8px;min-height:17px;}
 QPushButton:hover {background:#26394d;border-color:#63809e;}
 QPushButton#plain {background:transparent;border:0;color:#9db4d6;}
@@ -126,7 +126,7 @@ QLabel* label(const QString& text,const char* objectName=nullptr) {
     return l;
 }
 QFrame* card(QVBoxLayout** inner) {
-    auto* frame=new QFrame;frame->setObjectName("card");
+    auto* frame=new QFrame;frame->setObjectName("card");frame->setSizePolicy(QSizePolicy::Preferred,QSizePolicy::Minimum);
     auto* layout=new QVBoxLayout(frame);layout->setContentsMargins(10,9,10,9);layout->setSpacing(4);
     *inner=layout;return frame;
 }
@@ -207,7 +207,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     settingsOuter->addLayout(settingsHeader);
     auto* settingsScroll=new QScrollArea;settingsScroll->setWidgetResizable(true);
     auto* settingsContent=new QWidget;settingsContent->setObjectName("settingsContent");auto* settingsLayout=new QVBoxLayout(settingsContent);
-    settingsLayout->setContentsMargins(0,0,0,0);settingsLayout->setSpacing(7);
+    settingsLayout->setContentsMargins(0,0,0,0);settingsLayout->setSpacing(7);settingsLayout->setSizeConstraint(QLayout::SetMinAndMaxSize);
     QVBoxLayout* daLayout=nullptr;settingsLayout->addWidget(card(&daLayout));
     daLayout->addWidget(label("DonationAlerts","section"));
     daEnabled_=new QCheckBox(QString::fromUtf8("Показывать донаты DonationAlerts"));
@@ -584,7 +584,7 @@ void DonationsDock::rebuildManualServices(){
 }
 void DonationsDock::editManualService(int index){
     if(index<0&&manualServices_.size()>=100){settingsMessage_->setText(QString::fromUtf8("Можно добавить до 100 сервисов."));return;}
-    QDialog dialog(this);dialog.setWindowTitle(QString::fromUtf8(index<0?"Добавить сервис":"Изменить сервис"));dialog.setStyleSheet(QString::fromUtf8(dockStyle));dialog.setMinimumWidth(300);dialog.setStyleSheet(dialog.styleSheet()+"QDialog QLineEdit,QDialog QDoubleSpinBox{background:#0c1420;color:#e7eeff;border:1px solid #344865;border-radius:6px;padding:5px;min-height:22px;}");
+    QDialog dialog(this);dialog.setWindowTitle(QString::fromUtf8(index<0?"Добавить сервис":"Изменить сервис"));dialog.setStyleSheet(QString::fromUtf8(dockStyle));dialog.setMinimumWidth(300);dialog.setStyleSheet(dialog.styleSheet()+"QDialog{background:#080f19;}QDialog QLabel{color:#dfe8ff;font-size:12px;}QDialog QLineEdit,QDialog QDoubleSpinBox{background:#0c1420;color:#e7eeff;border:1px solid #344865;border-radius:6px;padding:5px;min-height:22px;}");
     auto* layout=new QVBoxLayout(&dialog);auto* form=new QFormLayout;form->setRowWrapPolicy(QFormLayout::WrapAllRows);
     auto* name=new QLineEdit;name->setMaxLength(80);name->setObjectName("manualServiceName");name->setPlaceholderText(QString::fromUtf8("Название донатного сервиса"));
     auto* amount=new QDoubleSpinBox;amount->setObjectName("manualServiceAmount");amount->setLocale(QLocale(QLocale::Russian,QLocale::Russia));amount->setDecimals(2);amount->setRange(0,1e12);amount->setGroupSeparatorShown(true);amount->setSuffix(QString::fromUtf8(" ₽"));
