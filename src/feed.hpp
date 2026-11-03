@@ -7,6 +7,7 @@
 #include <QNetworkAccessManager>
 #include <QSet>
 #include <QTimer>
+#include <QThreadPool>
 #include <QVector>
 #include <QWebSocket>
 
@@ -26,6 +27,7 @@ class DonationFeed : public QObject {
     Q_OBJECT
 public:
     explicit DonationFeed(QObject* parent=nullptr);
+    ~DonationFeed() override;
     void configure(const DonationCredentials& c);
     void setCachePath(const QString& path) { cachePath_=path; }
     void stop();
@@ -72,7 +74,9 @@ private:
     void setStatus(QString& target,const QString& status);
     QNetworkAccessManager http_;
     QWebSocket socket_;
-    QTimer daRetry_,dpTimer_,cacheTimer_;
+    QTimer daRetry_,dpTimer_,cacheTimer_,totalsCacheTimer_;
+    QThreadPool cacheWorker_;
+    void writeTotalsCache();
     QString daToken_,dpToken_,daChannel_,daSocketToken_;
     QString daStatus_=QString::fromUtf8("Не подключён");
     QString dpStatus_=QString::fromUtf8("Не подключён");

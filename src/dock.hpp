@@ -3,6 +3,8 @@
 #include "oauth_loopback.hpp"
 #include <QPointer>
 #include <QMap>
+#include <QThreadPool>
+#include <QHash>
 #include <QWidget>
 
 class QLabel;
@@ -28,6 +30,11 @@ private:
     void showSettings(bool visible);
     void refreshCredentials();
     void render();
+    void applyCredentials(const DonationCredentials& next);
+    QThreadPool credentialsWorker_;
+    bool credentialsPending_=false,credentialsAgain_=false,renderPending_=false;
+    QByteArray credentialFiles_,listSignature_;
+    QHash<QString,QWidget*> rows_;
     void beginDALogin();
     void openVideo(const QString& id);
     void loadRates();

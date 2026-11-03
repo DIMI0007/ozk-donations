@@ -33,6 +33,8 @@
 #include <QJsonArray>
 #include <QNetworkAccessManager>
 #include <cmath>
+#include <QDataStream>
+#include <QScrollBar>
 
 namespace {
 QIcon settingsIcon() {
@@ -182,7 +184,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.2"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.3"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -248,7 +250,10 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     };
     connect(daEnabled_,&QCheckBox::toggled,this,saveChoices);
     connect(dpEnabled_,&QCheckBox::toggled,this,saveChoices);
-    connect(&feed_,&DonationFeed::updated,this,&DonationsDock::render);
+    connect(&feed_,&DonationFeed::updated,this,[this]{
+        if(renderPending_||closing_)return;renderPending_=true;
+        QTimer::singleShot(0,this,[this]{renderPending_=false;render();});
+    });
     connect(&login_,&OAuthLoopback::failed,this,[this](const QString&){
         settingsMessage_->setText(QString::fromUtf8("Вход не завершён. Попробуйте ещё раз."));
     });
@@ -284,7 +289,10 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
 #ifndef OZK_DONATIONS_PREVIEW
     if(!QFileInfo::exists(ratesPath_))fetchRatesOnce();
 #endif
+    credentialsWorker_.setMaxThreadCount(1);
+#ifndef OZK_DONATIONS_PREVIEW
     refreshCredentials();
+#endif
 }
 #ifdef OZK_DONATIONS_PREVIEW
 void DonationsDock::previewPopulate() {
@@ -352,7 +360,22 @@ void DonationsDock::fetchRatesOnce() {
 void DonationsDock::refreshCredentials() {
     donations_telemetry::CpuScope cpu;
     if(closing_)return;
-    const auto next=loadCredentials(ownPath_,notifyPath_);
+    if(credentialsPending_){credentialsAgain_=true;return;}
+    credentialsPending_=true;
+    const auto own=ownPath_,notify=notifyPath_;const auto previous=credentialFiles_;
+    credentialsWorker_.start([this,own,notify,previous]{
+        QFile a(own),b(notify);a.open(QIODevice::ReadOnly);b.open(QIODevice::ReadOnly);
+        QByteArray bytes;QDataStream stream(&bytes,QIODevice::WriteOnly);stream<<a.readAll()<<b.readAll();
+        const bool changed=bytes!=previous;
+        const auto next=changed?loadCredentials(own,notify):DonationCredentials{};
+        QMetaObject::invokeMethod(this,[this,bytes,changed,next]{
+            credentialsPending_=false;if(closing_)return;
+            if(changed){credentialFiles_=bytes;applyCredentials(next);}
+            if(credentialsAgain_){credentialsAgain_=false;refreshCredentials();}
+        },Qt::QueuedConnection);
+    });
+}
+void DonationsDock::applyCredentials(const DonationCredentials& next) {
     if(next.da!=credentials_.da||next.dp!=credentials_.dp||
        next.daEnabled!=credentials_.daEnabled||next.dpEnabled!=credentials_.dpEnabled){
         credentials_=next;DonationCredentials active=credentials_;
@@ -401,11 +424,6 @@ void DonationsDock::render() {
     for(const auto& entry:feed_.entries())
         if((entry.service=="DonationAlerts"&&credentials_.daEnabled)||
            (entry.service=="DonatePay"&&credentials_.dpEnabled))entries.append(entry);
-    while(feedLayout_->count()>0){auto* item=feedLayout_->takeAt(0);delete item->widget();delete item;}
-    if(feed_.daHistoryPermissionNeeded()&&credentials_.daEnabled){
-        auto* hint=label(QString::fromUtf8("История DonationAlerts пока не разрешена. Откройте ⚙ и нажмите «Разрешить историю DonationAlerts»."),"muted");
-        feedLayout_->addWidget(hint);
-    }
     auto serviceTotal=[&](const QString& service){
         const auto totals=feed_.totals(service);
         if(!totals.complete)return QString::fromUtf8("%1: считаем историю…").arg(service);
@@ -441,6 +459,21 @@ void DonationsDock::render() {
     rateStatus_->setText(rateDate.isValid()?QString::fromUtf8("Сохранённый курс от %1 · без автоматического обновления").arg(rateDate.toString("dd.MM.yyyy")):
         ratesReply_?QString::fromUtf8("Загружаем курс…"):QString::fromUtf8("Курс не загружен"));
     combinedUsd_->setToolTip(QString::fromUtf8("Примерная сумма всех подключённых сервисов в USD по одному сохранённому курсу от %1. Это не фактическая сумма выплат.").arg(rateDate.toString("dd.MM.yyyy")));
+    QByteArray signature;QDataStream signatureStream(&signature,QIODevice::WriteOnly);
+    signatureStream<<feed_.loading()<<feed_.hasAccounts()<<feed_.daHistoryPermissionNeeded()<<credentials_.daEnabled;
+    QHash<QString,QByteArray> versions;
+    for(const auto& e:entries){
+        QByteArray version;QDataStream data(&version,QIODevice::WriteOnly);
+        data<<e.service<<e.id<<e.donor<<e.message<<e.currency<<e.amount<<e.at<<e.session;
+        versions.insert(e.service+":"+e.id,version);signatureStream<<version;
+    }
+    if(signature==listSignature_)return;
+    listSignature_=signature;
+    while(feedLayout_->count()>0){auto* item=feedLayout_->takeAt(0);
+        if(item->widget()&&!rows_.values().contains(item->widget()))delete item->widget();delete item;}
+    auto previousRows=rows_;rows_.clear();
+    if(feed_.daHistoryPermissionNeeded()&&credentials_.daEnabled)
+        feedLayout_->addWidget(label(QString::fromUtf8("История DonationAlerts пока не разрешена. Откройте ⚙ и разрешите историю."),"muted"));
     if(entries.isEmpty()){
         const QString message=feed_.loading()?QString::fromUtf8("Подгружаем последние донаты…"):
              feed_.hasAccounts()?QString::fromUtf8("Последних донатов пока нет"):
@@ -454,7 +487,14 @@ void DonationsDock::render() {
         total_->setText(sessionCount?QString::fromUtf8("Новые донаты: %1 · %2").arg(sessionCount).arg(sums(totals)):
             QString::fromUtf8("Новых донатов пока нет"));
         for(const auto& entry:entries){
+            const auto key=entry.service+":"+entry.id;
+            auto* existing=previousRows.take(key);
+            if(existing&&existing->property("donationVersion").toByteArray()==versions.value(key)){
+                rows_.insert(key,existing);feedLayout_->addWidget(existing);continue;
+            }
+            delete existing;
             QVBoxLayout* inside=nullptr;auto* row=card(&inside);
+            row->setProperty("donationVersion",versions.value(key));rows_.insert(key,row);
             if(entry.session)row->setObjectName("newDonationCard");
             auto* top=new QHBoxLayout;top->setSpacing(5);
             auto* logo=new QLabel;logo->setPixmap(QPixmap(entry.service=="DonationAlerts"?
@@ -485,10 +525,11 @@ void DonationsDock::render() {
             feedLayout_->addWidget(row);
         }
     }
+    qDeleteAll(previousRows);
     feedLayout_->addStretch();
 }
 void DonationsDock::shutdown() {
     if(closing_)return;
-    closing_=true;credentialsTimer_->stop();login_.stop();
+    closing_=true;credentialsTimer_->stop();credentialsWorker_.waitForDone();login_.stop();
     if(loginReply_)loginReply_->abort();if(ratesReply_)ratesReply_->abort();player_->stop();feed_.stop();
 }

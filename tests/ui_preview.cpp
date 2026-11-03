@@ -24,6 +24,11 @@ int main(int argc,char** argv) {
     DonationsDock dock;
     dock.resize(360,740);dock.show();app.processEvents();
     dock.previewPopulate();app.processEvents();
+    auto* firstRow=dock.findChild<QWidget*>("newDonationCard");
+    if(!firstRow)return 9;
+    for(int i=0;i<100;++i)dock.previewPopulate();
+    app.processEvents();
+    if(dock.findChild<QWidget*>("newDonationCard")!=firstRow)return 10;
     if(!dock.grab().save(output+"/home-360.png"))return 2;
     dock.resize(300,700);app.processEvents();
     if(!dock.grab().save(output+"/home-300.png"))return 3;

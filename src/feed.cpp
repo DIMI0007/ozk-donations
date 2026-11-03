@@ -84,7 +84,10 @@ bool occurredThisSession(const DonationEntry& entry,const QDateTime& startedAt) 
 }
 DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
     daRetry_.setSingleShot(true);dpTimer_.setSingleShot(true);cacheTimer_.setSingleShot(true);
-    cacheTimer_.setInterval(800);
+    cacheWorker_.setMaxThreadCount(1);
+    cacheTimer_.setInterval(1200);
+    totalsCacheTimer_.setSingleShot(true);totalsCacheTimer_.setInterval(2200);
+    connect(&totalsCacheTimer_,&QTimer::timeout,this,&DonationFeed::writeTotalsCache);
     connect(&cacheTimer_,&QTimer::timeout,this,&DonationFeed::saveCache);
     connect(&daRetry_,&QTimer::timeout,this,&DonationFeed::connectDA);
     connect(&dpTimer_,&QTimer::timeout,this,&DonationFeed::pollDP);
@@ -101,6 +104,7 @@ DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
         if(!closing_&&!resettingSocket_)retryDA();
     });
 }
+DonationFeed::~DonationFeed() { stop();cacheWorker_.waitForDone(); }
 void DonationFeed::setStatus(QString& target,const QString& value) {
     if(target!=value){target=value;Q_EMIT updated();}
 }
@@ -127,7 +131,7 @@ void DonationFeed::configure(const DonationCredentials& c) {
 }
 void DonationFeed::stop() {
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
-    saveTotalsCache();
+    totalsCacheTimer_.stop();writeTotalsCache();
     closing_=true;++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
 }
@@ -160,7 +164,9 @@ void DonationFeed::updateDataUsage() {
     donations_telemetry::dataBytes.store(bytes);
 }
 void DonationFeed::saveCache() {
-    if(!cachePath_.isEmpty())saveDonationCache(cachePath_,daToken_,dpToken_,entries_);
+    if(cachePath_.isEmpty())return;
+    const auto path=cachePath_, da=daToken_, dp=dpToken_;const auto entries=entries_;
+    cacheWorker_.start([path,da,dp,entries]{saveDonationCache(path,da,dp,entries);});
 }
 void DonationFeed::loadTotalsCache() {
     donations_telemetry::CpuScope cpu;
@@ -185,8 +191,17 @@ void DonationFeed::loadTotalsCache() {
     Q_EMIT updated();
 }
 void DonationFeed::saveTotalsCache() {
+    if(!totalsCacheTimer_.isActive())totalsCacheTimer_.start();
+}
+void DonationFeed::writeTotalsCache() {
     if(cachePath_.isEmpty())return;
-    const auto old=loadProtectedDonationJson(cachePath_+".totals");
+    const auto path=cachePath_+".totals";
+    const auto daToken=daToken_,dpToken=dpToken_;
+    const auto daTotals=daTotals_,dpTotals=dpTotals_;
+    const auto daIds=daTotalIds_,dpIds=dpTotalIds_;
+    const int daNext=daNextPage_,dpNext=dpNextSkip_;
+    cacheWorker_.start([path,daToken,dpToken,daTotals,dpTotals,daIds,dpIds,daNext,dpNext]{
+    const auto old=loadProtectedDonationJson(path);
     QJsonObject result{{"version",1}};
     const auto month=QDate::currentDate().toString("yyyy-MM");
     auto insert=[&](const QString& key,const QString& token,const Totals& totals,const QSet<QString>& ids,int next){
@@ -198,9 +213,10 @@ void DonationFeed::saveTotalsCache() {
             {"all",mapJson(totals.all)},{"month",mapJson(totals.month)},
             {"monthKey",month},{"complete",totals.complete},{"next",next},{"ids",names}});
     };
-    insert("da",daToken_,daTotals_,daTotalIds_,daNextPage_);
-    insert("dp",dpToken_,dpTotals_,dpTotalIds_,dpNextSkip_);
-    saveProtectedDonationJson(cachePath_+".totals",result);
+    insert("da",daToken,daTotals,daIds,daNext);
+    insert("dp",dpToken,dpTotals,dpIds,dpNext);
+    saveProtectedDonationJson(path,result);
+    });
 }
 void DonationFeed::connectDA() {
     donations_telemetry::CpuScope cpu;
