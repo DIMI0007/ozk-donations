@@ -92,7 +92,7 @@ QLabel {background:transparent;}
 QFrame#header {background:#080f19;border-bottom:1px solid #2c4059;}
 QFrame#card {background:#0c1725;border:1px solid #30465e;border-radius:7px;}
 QFrame#newDonationCard {background:#151b21;border:1px solid #d9ab3c;border-radius:7px;}
-QLabel#title {font-size:16px;font-weight:700;color:#f7fbff;}
+QLabel#title {font-size:17px;font-weight:700;color:#e7fff4;}
 QLabel#section {font-size:12px;font-weight:700;color:#eaf2ff;}
 QLabel#muted {color:#9db4d6;}
 QLabel#number {font-size:16px;font-weight:700;color:#26deb0;}
@@ -157,9 +157,11 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     feed_.setCachePath(QFileInfo(ownPath_).dir().filePath("donations-cache.bin"));
     auto* root=new QVBoxLayout(this);root->setContentsMargins(0,0,0,0);root->setSpacing(0);
     auto* header=new QFrame;header->setObjectName("header");
-    auto* headerRow=new QHBoxLayout(header);headerRow->setContentsMargins(8,7,8,7);
+    auto* headerRow=new QHBoxLayout(header);headerRow->setContentsMargins(10,10,10,7);headerRow->setSpacing(7);
     headerRow->addWidget(new OzkLogo);
-    headerRow->addWidget(label("OZK Donations","title"));headerRow->addStretch();
+    auto* headerTitle=label("<span style='color:#57dfd1'>OZK</span> Donations","title");
+    headerTitle->setTextFormat(Qt::RichText);headerTitle->setAccessibleName("OZK Donations");
+    headerRow->addWidget(headerTitle);headerRow->addStretch();
     auto* settings=new QPushButton;settings->setObjectName("SettingsShortcut");
     settings->setIcon(settingsIcon());settings->setIconSize(QSize(19,19));
     settings->setToolTip(QString::fromUtf8("Настройки"));settings->setAccessibleName(settings->toolTip());
@@ -194,7 +196,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.6.2"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.6.3"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
