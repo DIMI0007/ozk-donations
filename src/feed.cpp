@@ -363,7 +363,7 @@ void DonationFeed::pollDP() {
         if(!response.ok){
             const bool invalidKey=code==401||code==403||response.status=="Incorrect DonatePay API key";
             setStatus(dpStatus_,invalidKey?QString::fromUtf8("Проверьте ключ"):QString::fromUtf8("Переподключение…"));
-            if(invalidKey)return;
+            if(invalidKey){dpTimer_.start(300000);return;} // Recheck after transient access denial; edited keys still reconnect immediately.
             dpFailures_=std::min(dpFailures_+1,3);int delay=30000*(1<<dpFailures_);
             if(response.rateLimited){bool ok=false;const double seconds=retryAfter.toDouble(&ok);
                 if(ok&&std::isfinite(seconds)&&seconds>0)delay=std::max(delay,int(std::min(seconds,3600.0)*1000));}
