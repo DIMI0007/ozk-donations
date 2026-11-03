@@ -474,6 +474,7 @@ void DonationsDock::render() {ozkperf::Scope perf(Q_FUNC_INFO);
     while(feedLayout_->count()>0){auto* item=feedLayout_->takeAt(0);
         if(item->widget()&&!rows_.values().contains(item->widget()))delete item->widget();delete item;}
     auto previousRows=rows_;rows_.clear();
+    QElapsedTimer rowBudget;rowBudget.start();int createdRows=0;bool unfinishedRows=false;
     if(feed_.daHistoryPermissionNeeded()&&credentials_.daEnabled)
         feedLayout_->addWidget(label(QString::fromUtf8("История DonationAlerts пока не разрешена. Откройте ⚙ и разрешите историю."),"muted"));
     if(entries.isEmpty()){
@@ -494,7 +495,11 @@ void DonationsDock::render() {ozkperf::Scope perf(Q_FUNC_INFO);
             if(existing&&existing->property("donationVersion").toByteArray()==versions.value(key)){
                 rows_.insert(key,existing);feedLayout_->addWidget(existing);continue;
             }
-            delete existing;
+            if(createdRows>=8||rowBudget.elapsed()>=4){
+                if(existing){rows_.insert(key,existing);feedLayout_->addWidget(existing);}
+                unfinishedRows=true;continue;
+            }
+            delete existing;++createdRows;
             QVBoxLayout* inside=nullptr;auto* row=card(&inside);
             row->setProperty("donationVersion",versions.value(key));rows_.insert(key,row);
             if(entry.session)row->setObjectName("newDonationCard");
@@ -529,6 +534,9 @@ void DonationsDock::render() {ozkperf::Scope perf(Q_FUNC_INFO);
     }
     qDeleteAll(previousRows);
     feedLayout_->addStretch();
+    if(unfinishedRows&&!renderPending_){renderPending_=true;
+        QTimer::singleShot(0,this,[this]{renderPending_=false;listSignature_.clear();render();});
+    }
 }
 DonationsDock::~DonationsDock() { shutdown(); }
 void DonationsDock::shutdown() {
