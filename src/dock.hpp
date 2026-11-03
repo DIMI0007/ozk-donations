@@ -22,6 +22,7 @@ class DonationsDock : public QWidget {
     Q_OBJECT
 public:
     explicit DonationsDock(QWidget* parent=nullptr);
+    ~DonationsDock() override;
     void shutdown();
 #ifdef OZK_DONATIONS_PREVIEW
     void previewPopulate();

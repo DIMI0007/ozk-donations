@@ -528,6 +528,7 @@ void DonationsDock::render() {
     qDeleteAll(previousRows);
     feedLayout_->addStretch();
 }
+DonationsDock::~DonationsDock() { shutdown(); }
 void DonationsDock::shutdown() {
     if(closing_)return;
     closing_=true;credentialsTimer_->stop();credentialsWorker_.waitForDone();login_.stop();

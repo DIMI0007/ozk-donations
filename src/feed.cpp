@@ -112,6 +112,7 @@ void DonationFeed::configure(const DonationCredentials& c) {
     donations_telemetry::CpuScope cpu;
     if(daToken_==c.da&&dpToken_==c.dp&&!closing_)return;
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
+    if(totalsCacheTimer_.isActive()){totalsCacheTimer_.stop();writeTotalsCache();}
     ++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
     daToken_=c.da;dpToken_=c.dp;closing_=false;daFailures_=dpFailures_=0;
