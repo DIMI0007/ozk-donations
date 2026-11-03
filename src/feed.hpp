@@ -67,7 +67,7 @@ private:
     void fetchDPHistory(int skip);
     void collectTotal(const DonationEntry& entry);
     void updateDataUsage();
-    void loadTotalsCache();
+    void restoreTotalsCache(const QJsonObject& cache);
     void saveTotalsCache();
     void saveCache();
     void add(const DonationEntry& entry);

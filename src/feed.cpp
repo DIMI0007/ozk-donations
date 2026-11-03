@@ -119,15 +119,23 @@ void DonationFeed::configure(const DonationCredentials& c) {
     daHistoryPermissionNeeded_=false;daHistoryChecked_=false;
     daTotals_={};dpTotals_={};daTotalIds_.clear();dpTotalIds_.clear();
     daTotalsStarted_=dpTotalsStarted_=false;
-    daNextPage_=1;dpNextSkip_=0;loadTotalsCache();
+    daNextPage_=1;dpNextSkip_=0;
     entries_.clear();seen_.clear();
-    for(const auto& entry:loadDonationCache(cachePath_,daToken_,dpToken_)){
-        entries_.append(entry);seen_.insert(entry.service+":"+entry.id);
-    }
     setStatus(daStatus_,daToken_.isEmpty()?QString::fromUtf8("Не подключён"):QString::fromUtf8("Подключение…"));
     setStatus(dpStatus_,dpToken_.isEmpty()?QString::fromUtf8("Не подключён"):QString::fromUtf8("Подключение…"));
-    if(!daToken_.isEmpty())connectDA();
-    if(!dpToken_.isEmpty())pollDP();
+    const auto path=cachePath_,da=daToken_,dp=dpToken_;const auto epoch=daEpoch_;
+    cacheWorker_.start([this,path,da,dp,epoch]{
+        const auto totals=loadProtectedDonationJson(path+".totals");
+        const auto entries=loadDonationCache(path,da,dp);
+        QMetaObject::invokeMethod(this,[this,epoch,entries,totals]{
+            if(closing_||epoch!=daEpoch_)return;
+            restoreTotalsCache(totals);
+            for(const auto& entry:entries){entries_.append(entry);seen_.insert(entry.service+":"+entry.id);}
+            if(!daToken_.isEmpty())connectDA();
+            if(!dpToken_.isEmpty())QTimer::singleShot(350,this,[this,epoch]{if(!closing_&&epoch==daEpoch_)pollDP();});
+            Q_EMIT updated();
+        },Qt::QueuedConnection);
+    });
     Q_EMIT updated();
 }
 void DonationFeed::stop() {
@@ -169,10 +177,9 @@ void DonationFeed::saveCache() {
     const auto path=cachePath_, da=daToken_, dp=dpToken_;const auto entries=entries_;
     cacheWorker_.start([path,da,dp,entries]{saveDonationCache(path,da,dp,entries);});
 }
-void DonationFeed::loadTotalsCache() {
+void DonationFeed::restoreTotalsCache(const QJsonObject& cache) {
     donations_telemetry::CpuScope cpu;
     if(cachePath_.isEmpty())return;
-    const auto cache=loadProtectedDonationJson(cachePath_+".totals");
     if(cache.value("version").toInt()!=1)return;
     const auto month=QDate::currentDate().toString("yyyy-MM");
     auto restore=[&](const QString& key,const QString& token,Totals& totals,QSet<QString>& ids,int& next){

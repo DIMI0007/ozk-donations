@@ -1,3 +1,4 @@
+#include "ozk_performance.hpp"
 #include "dock.hpp"
 #include "credentials.hpp"
 #include "youtube_links.hpp"
@@ -143,6 +144,7 @@ QString sanitized(QString v,int limit=600) {
 }
 
 DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_(this) {
+    ozkperf::install();
     setObjectName("donationsRoot");setStyleSheet(QString::fromUtf8(dockStyle));
     setMinimumWidth(260);ownPath_=ownSettingsPath();notifyPath_=notifySettingsPath();
     ratesPath_=QFileInfo(ownPath_).dir().filePath("exchange-rates.json");
@@ -184,7 +186,7 @@ DonationsDock::DonationsDock(QWidget* parent):QWidget(parent),feed_(this),login_
     auto* empty=label(QString::fromUtf8("Ждём первый донат"),"muted");
     empty->setAlignment(Qt::AlignCenter);feedLayout_->addWidget(empty);feedLayout_->addStretch();
     scroll->setWidget(feedList_);homeLayout->addWidget(scroll,1);
-    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.3"),"muted");
+    auto* footer=label(QString::fromUtf8("by OTMOPOZOK · v0.5.4"),"muted");
     footer->setAlignment(Qt::AlignCenter);homeLayout->addWidget(footer);
     pages_->addWidget(home);
 
@@ -403,7 +405,7 @@ void DonationsDock::beginDALogin() {
         login_.stop();settingsMessage_->setText(QString::fromUtf8("Браузер не открылся."));
     }
 }
-void DonationsDock::render() {
+void DonationsDock::render() {ozkperf::Scope perf(Q_FUNC_INFO);
     donations_telemetry::CpuScope cpu;
     if(closing_)return;
     daStatus_->setText(QString::fromUtf8("Состояние: ")+(credentials_.daEnabled?feed_.daStatus():QString::fromUtf8("Выключен"))+
