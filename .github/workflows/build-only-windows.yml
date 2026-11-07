@@ -1,5 +1,7 @@
 name: Build OZK Donations package only (Windows)
 on:
+  push:
+    branches: [main]
   workflow_dispatch:
 permissions:
   contents: read
