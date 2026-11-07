@@ -1,5 +1,7 @@
 # OZK Donations for OBS
 
+**Версия 0.6.4:** когда OZK Notify и OZK Donations работают вместе с одним аккаунтом DonatePay, регулярный запрос новых донатов делает Notify. Donations получает их внутри OBS и загружает историю отдельно. Если Notify выключен или недоступен, Donations снова проверяет новые донаты самостоятельно. Оба плагина работают по отдельности.
+
 Версия 0.6.3: шапка выровнена с OZK Notify; снижена работа в потоке интерфейса OBS; добавлена запись заметных задержек в журнал для проверки отзывчивости.
 
 
@@ -53,7 +55,7 @@
 
 ## Как установить
 
-Поддерживается Windows x64 и OBS Studio 33. Скачайте архив **OZK-Donations-0.6.3-OBS33-Windows-x64** на странице [последней успешной сборки](https://github.com/DIMI0007/ozk-donations/actions/workflows/build-windows.yml), скопируйте папку `ozk-donations` из архива в `C:\ProgramData\obs-studio\plugins\`. Затем откройте OBS: панель появится в меню «Док-панели» → «OZK Donations». Если OBS открыт, закройте его до копирования файлов.
+Поддерживается Windows x64 и OBS Studio 33. Скачайте архив **OZK-Donations-0.6.4-OBS33-Windows-x64** на странице [последней успешной сборки](https://github.com/DIMI0007/ozk-donations/actions/workflows/build-windows.yml), скопируйте папку `ozk-donations` из архива в `C:\ProgramData\obs-studio\plugins\`. Затем откройте OBS: панель появится в меню «Док-панели» → «OZK Donations». Если OBS открыт, закройте его до копирования файлов.
 
 Обе службы работают независимо. OZK Notify для работы этой панели не обязателен.
 
