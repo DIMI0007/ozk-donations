@@ -139,12 +139,11 @@ void DonationFeed::readNotifyDonations() {
         dpTotalsStarted_=true;
         if(rows.size()<100)dpTotals_.complete=true;
         else if(!dpTotals_.complete)
-            QTimer::singleShot(25000,this,[this,token=dpToken_]{
-                if(!closing_&&token==dpToken_)fetchDPHistory(100);
-            });
+            scheduleDPHistory(100);
     }
     if(dpTotalIds_.size()!=before){saveTotalsCache();Q_EMIT updated();}
-    if(ozk_bridge::hasDPProvider(dpToken_))setStatus(dpStatus_,QString::fromUtf8("Подключён"));
+    if(ozk_bridge::hasDPProvider(dpToken_))setStatus(dpStatus_,ozk_bridge::dpProviderConnected(dpToken_)?
+        QString::fromUtf8("Подключён"):QString::fromUtf8("Переподключение…"));
 }
 void DonationFeed::setStatus(QString& target,const QString& value) {
     if(target!=value){target=value;Q_EMIT updated();}
@@ -431,7 +430,7 @@ void DonationFeed::pollDP() {
             dpTotalsStarted_=true;
             if(rows.size()<100)dpTotals_.complete=true;
             else if(!dpTotals_.complete)
-                QTimer::singleShot(25000,this,[this,token=dpToken_]{if(!closing_&&token==dpToken_)fetchDPHistory(100);});
+                scheduleDPHistory(100);
         }
         saveTotalsCache();
         Q_EMIT updated();
@@ -455,7 +454,7 @@ void DonationFeed::fetchDPHistory(int skip) {
         if(closing_||token!=dpToken_)return;
         const auto response=sn::parseDonatePayReply(code,bytes);
         if(!response.ok){
-            QTimer::singleShot(60000,this,[this,token,skip]{if(!closing_&&token==dpToken_)fetchDPHistory(skip);});return;
+            scheduleDPHistory(skip);return;
         }
         const auto rows=response.rows;
         const int before=dpTotalIds_.size();
@@ -464,7 +463,17 @@ void DonationFeed::fetchDPHistory(int skip) {
         updateDataUsage();
         if(rows.size()<100){dpTotals_.complete=true;saveTotalsCache();Q_EMIT updated();return;}
         if(dpTotalIds_.size()==before){return;} // Unknown pagination; do not show an incomplete total.
-        QTimer::singleShot(25000,this,[this,token,skip]{if(!closing_&&token==dpToken_)fetchDPHistory(skip+100);});
+        scheduleDPHistory(skip+100);
         Q_EMIT updated();
+    });
+}
+void DonationFeed::scheduleDPHistory(int skip) {
+    if(closing_||dpToken_.isEmpty())return;
+    const QString token=dpToken_;
+    // Keep backfill requests off the live polling cadence when Notify owns the
+    // account, while preserving a useful pace for stand-alone Donations users.
+    const int delay=ozk_bridge::hasDPProvider(token)?300000:60000;
+    QTimer::singleShot(delay,this,[this,token,skip]{
+        if(!closing_&&token==dpToken_)fetchDPHistory(skip);
     });
 }

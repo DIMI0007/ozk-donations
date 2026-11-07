@@ -18,11 +18,11 @@ inline QByteArray account(const QString& token) {
 }
 // The provider refreshes this short lease while its own DonatePay poller is
 // active. Consumers resume independent polling if the provider disappears.
-inline void publishDPProvider(const QString& token) {
+inline void publishDPProvider(const QString& token,bool connected=false) {
     auto* app=QCoreApplication::instance();
     if(!app||token.isEmpty()||QThread::currentThread()!=app->thread())return;
     const auto bytes=QJsonDocument(QJsonObject{{"account",QString::fromLatin1(account(token))},
-        {"at",QDateTime::currentMSecsSinceEpoch()}}).toJson(QJsonDocument::Compact);
+        {"at",QDateTime::currentMSecsSinceEpoch()},{"connected",connected}}).toJson(QJsonDocument::Compact);
     app->setProperty(dpProviderProperty,bytes);
 }
 inline void clearDPProvider(const QString& token) {
@@ -41,6 +41,15 @@ inline bool hasDPProvider(const QString& token,qint64 now=QDateTime::currentMSec
     const qint64 at=root.value("at").toVariant().toLongLong();
     return root.value("account").toString().toLatin1()==account(token)&&
         at>0&&now>=at&&now-at<=45000;
+}
+inline bool dpProviderConnected(const QString& token) {
+    auto* app=QCoreApplication::instance();
+    if(!app||token.isEmpty()||QThread::currentThread()!=app->thread())return false;
+    const auto bytes=app->property(dpProviderProperty).toByteArray();
+    if(bytes.size()>512)return false;
+    const auto root=QJsonDocument::fromJson(bytes).object();
+    return root.value("account").toString().toLatin1()==account(token)&&
+        root.value("connected").toBool()&&hasDPProvider(token);
 }
 inline void publishDP(const QString& token,const QJsonArray& rows) {
     auto* app=QCoreApplication::instance();

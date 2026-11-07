@@ -71,6 +71,7 @@ private:
     void fetchDAHistoryPage(int page);
     void pollDP();
     void fetchDPHistory(int skip);
+    void scheduleDPHistory(int skip);
     void collectTotal(const DonationEntry& entry);
     void updateDataUsage();
     void restoreTotalsCache(const QJsonObject& cache);
