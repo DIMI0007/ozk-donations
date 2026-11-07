@@ -53,11 +53,29 @@ struct DonationFeedTest {
         ozk_bridge::publishDP("test-account",{second});QCoreApplication::processEvents();
         assert(feed.entries().size()==1);
     }
+    static void providerFailover() {
+        DonationFeed feed;feed.dpToken_="test-provider";feed.bridgeReady_=true;
+        ozk_bridge::publishDPProvider("test-provider");
+        assert(ozk_bridge::hasDPProvider("test-provider"));
+        assert(!ozk_bridge::hasDPProvider("other-account"));
+        assert(!ozk_bridge::hasDPProvider("test-provider",
+            QDateTime::currentMSecsSinceEpoch()+46000));
+        feed.pollDP(); // No network request while Notify owns live polling.
+        assert(feed.dpTimer_.isActive()&&feed.dpTimer_.interval()==15000);
+        ozk_bridge::clearDPProvider("other-account");
+        assert(ozk_bridge::hasDPProvider("test-provider"));
+        ozk_bridge::clearDPProvider("test-provider");
+        QCoreApplication::processEvents();
+        assert(!ozk_bridge::hasDPProvider("test-provider"));
+        assert(feed.dpTimer_.isActive()&&feed.dpTimer_.interval()==350);
+        feed.stop(); // Stop before the standalone fallback timer can send a request.
+    }
 };
 
 int main(int argc,char** argv){
     QCoreApplication app(argc,argv);
     DonationFeedTest::bridge();
+    DonationFeedTest::providerFailover();
     DonationFeedTest::independentStartup();
     const auto converted=convertToRub({{"RUB",100.0},{"USD",2.0}},{{"USD",90.0}});
     assert(converted.complete&&converted.converted&&converted.amount==280.0);

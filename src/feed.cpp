@@ -110,23 +110,41 @@ DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
 }
 DonationFeed::~DonationFeed() { stop();cacheWorker_.waitForDone(); }
 bool DonationFeed::eventFilter(QObject* watched,QEvent* event) {
-    if(watched==QCoreApplication::instance()&&event->type()==QEvent::DynamicPropertyChange&&
-       static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName()==ozk_bridge::dpProperty&&
-       !bridgeQueued_){
-        bridgeQueued_=true;
-        QTimer::singleShot(0,this,[this]{bridgeQueued_=false;readNotifyDonations();});
+    if(watched==QCoreApplication::instance()&&event->type()==QEvent::DynamicPropertyChange){
+        const auto property=static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
+        if((property==ozk_bridge::dpProperty||property==ozk_bridge::dpProviderProperty)&&
+           !bridgeQueued_){
+            bridgeQueued_=true;
+            QTimer::singleShot(0,this,[this]{
+                bridgeQueued_=false;
+                if(closing_||!bridgeReady_||dpToken_.isEmpty())return;
+                readNotifyDonations();
+                if(ozk_bridge::hasDPProvider(dpToken_))dpTimer_.start(15000);
+                else dpTimer_.start(350);
+            });
+        }
     }
     return QObject::eventFilter(watched,event);
 }
 void DonationFeed::readNotifyDonations() {
     if(closing_||!bridgeReady_||dpToken_.isEmpty())return;
+    if(!ozk_bridge::hasDPSnapshot(dpToken_))return;
     const auto rows=ozk_bridge::readDP(dpToken_);
     const int before=dpTotalIds_.size();
     for(const auto& row:rows){
         auto entry=parseDP(row.toObject());entry.session=occurredThisSession(entry,startedAt_);
         add(entry);collectTotal(entry);
     }
+    if(!dpTotalsStarted_){
+        dpTotalsStarted_=true;
+        if(rows.size()<100)dpTotals_.complete=true;
+        else if(!dpTotals_.complete)
+            QTimer::singleShot(25000,this,[this,token=dpToken_]{
+                if(!closing_&&token==dpToken_)fetchDPHistory(100);
+            });
+    }
     if(dpTotalIds_.size()!=before){saveTotalsCache();Q_EMIT updated();}
+    if(ozk_bridge::hasDPProvider(dpToken_))setStatus(dpStatus_,QString::fromUtf8("Подключён"));
 }
 void DonationFeed::setStatus(QString& target,const QString& value) {
     if(target!=value){target=value;Q_EMIT updated();}
@@ -374,6 +392,11 @@ void DonationFeed::retryDA() {
 void DonationFeed::pollDP() {
     donations_telemetry::CpuScope cpu;
     if(closing_||dpToken_.isEmpty())return;
+    if(ozk_bridge::hasDPProvider(dpToken_)){
+        readNotifyDonations();
+        dpTimer_.start(15000); // Lease recheck; standalone polling resumes on provider loss.
+        return;
+    }
     const quint64 epoch=++dpEpoch_;
     QUrl url("https://donatepay.ru/api/v1/transactions");QUrlQuery query;
     query.addQueryItem("access_token",dpToken_);query.addQueryItem("limit","100");
@@ -413,7 +436,7 @@ void DonationFeed::pollDP() {
         saveTotalsCache();
         Q_EMIT updated();
         dpFailures_=0;setStatus(dpStatus_,QString::fromUtf8("Подключён"));
-        dpTimer_.start(60000); // Notify also polls; keep combined request rate modest.
+        dpTimer_.start(ozk_bridge::hasDPProvider(dpToken_)?15000:60000);
     });
 }
 void DonationFeed::fetchDPHistory(int skip) {
