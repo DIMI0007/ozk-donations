@@ -179,7 +179,8 @@ int main(int argc,char** argv){
     assert(parseManualServices(QJsonArray{QJsonObject{{"id","bad"},{"name","Bad"},{"kopecks",1.5}}}).isEmpty());
     assert(saveManualServices(manualPath,{}));assert(loadManualServices(manualPath).isEmpty());
     assert(sn::parseDonatePayReply(200,R"({"status":429})").rateLimited);
-    assert(!sn::parseDonatePayReply(200,R"({"status":"error","message":"Temporary error"})").ok);
+    const auto temporary=sn::parseDonatePayReply(200,R"({"status":"error","message":"Temporary error"})");
+    assert(!temporary.ok&&!temporary.permanent);
     const auto latest=sn::parseDonatePayReply(200,R"({"status":"success","data":[{"id":990001,"sum":5000,"currency":"RUB","type":"donation","status":"success","created_at":"2026-11-03 12:58:14"}]})");
     assert(latest.ok&&latest.rows.size()==1);const auto missed=parseDP(latest.rows[0].toObject());assert(missed.valid()&&missed.amount==5000);
     return 0;
