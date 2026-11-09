@@ -94,6 +94,8 @@ DonationFeed::DonationFeed(QObject* parent):QObject(parent) {
     connect(&totalsCacheTimer_,&QTimer::timeout,this,&DonationFeed::writeTotalsCache);
     connect(&cacheTimer_,&QTimer::timeout,this,&DonationFeed::saveCache);
     connect(&daRetry_,&QTimer::timeout,this,&DonationFeed::connectDA);
+    daLeaseTimer_.setInterval(15000);
+    connect(&daLeaseTimer_,&QTimer::timeout,this,&DonationFeed::syncDABridge);
     connect(&dpTimer_,&QTimer::timeout,this,&DonationFeed::pollDP);
     connect(&socket_,&QWebSocket::connected,this,[this]{
         if(closing_)return;
@@ -112,15 +114,24 @@ DonationFeed::~DonationFeed() { stop();cacheWorker_.waitForDone(); }
 bool DonationFeed::eventFilter(QObject* watched,QEvent* event) {
     if(watched==QCoreApplication::instance()&&event->type()==QEvent::DynamicPropertyChange){
         const auto property=static_cast<QDynamicPropertyChangeEvent*>(event)->propertyName();
-        if((property==ozk_bridge::dpProperty||property==ozk_bridge::dpProviderProperty)&&
+        if(property==ozk_bridge::daProperty)daEventsPending_=true;
+        if((property==ozk_bridge::dpProperty||property==ozk_bridge::dpProviderProperty||
+            property==ozk_bridge::daProperty||property==ozk_bridge::daProviderProperty)&&
            !bridgeQueued_){
             bridgeQueued_=true;
             QTimer::singleShot(0,this,[this]{
                 bridgeQueued_=false;
-                if(closing_||!bridgeReady_||dpToken_.isEmpty())return;
-                readNotifyDonations();
-                if(ozk_bridge::hasDPProvider(dpToken_))dpTimer_.start(15000);
-                else dpTimer_.start(350);
+                if(closing_||!bridgeReady_)return;
+                if(!daToken_.isEmpty()){
+                    syncDABridge();
+                    if(daEventsPending_&&usingDABridge_)readNotifyDA();
+                }
+                daEventsPending_=false;
+                if(!dpToken_.isEmpty()){
+                    readNotifyDonations();
+                    if(ozk_bridge::hasDPProvider(dpToken_))dpTimer_.start(15000);
+                    else dpTimer_.start(350);
+                }
             });
         }
     }
@@ -145,6 +156,32 @@ void DonationFeed::readNotifyDonations() {
     if(ozk_bridge::hasDPProvider(dpToken_))setStatus(dpStatus_,ozk_bridge::dpProviderConnected(dpToken_)?
         QString::fromUtf8("Подключён"):QString::fromUtf8("Переподключение…"));
 }
+void DonationFeed::readNotifyDA() {
+    if(closing_||!bridgeReady_||daToken_.isEmpty())return;
+    const auto rows=ozk_bridge::readDA(daToken_);
+    const int before=daTotalIds_.size();
+    for(const auto& row:rows)if(row.isObject()){
+        auto entry=parseDA(row.toObject());
+        entry.session=occurredThisSession(entry,startedAt_);
+        add(entry);
+        if(daTotalsStarted_)collectTotal(entry);
+    }
+    if(daTotalsStarted_&&daTotalIds_.size()!=before){saveTotalsCache();Q_EMIT updated();}
+}
+void DonationFeed::syncDABridge() {
+    if(closing_||!bridgeReady_||daToken_.isEmpty())return;
+    if(ozk_bridge::hasDAProvider(daToken_)){
+        if(!usingDABridge_){
+            usingDABridge_=true;++daEpoch_;daRetry_.stop();
+            resettingSocket_=true;socket_.abort();resettingSocket_=false;
+            readNotifyDA();
+        }
+        setStatus(daStatus_,ozk_bridge::daProviderConnected(daToken_)?
+            QString::fromUtf8("Подключён"):QString::fromUtf8("Переподключение…"));
+    }else if(usingDABridge_){
+        usingDABridge_=false;connectDA();
+    }
+}
 void DonationFeed::setStatus(QString& target,const QString& value) {
     if(target!=value){target=value;Q_EMIT updated();}
 }
@@ -153,10 +190,10 @@ void DonationFeed::configure(const DonationCredentials& c) {
     if(daToken_==c.da&&dpToken_==c.dp&&!closing_)return;
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
     if(totalsCacheTimer_.isActive()){totalsCacheTimer_.stop();writeTotalsCache();}
-    ++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
+    ++daEpoch_;++dpEpoch_;daRetry_.stop();daLeaseTimer_.stop();dpTimer_.stop();
     bridgeReady_=false;
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
-    daToken_=c.da;dpToken_=c.dp;closing_=false;daFailures_=dpFailures_=0;
+    daToken_=c.da;dpToken_=c.dp;closing_=false;usingDABridge_=false;daFailures_=dpFailures_=dpHistoryRateLimits_=0;
     daHistoryPermissionNeeded_=false;daHistoryChecked_=false;
     daTotals_={};dpTotals_={};daTotalIds_.clear();dpTotalIds_.clear();
     daTotalsStarted_=dpTotalsStarted_=false;
@@ -173,7 +210,11 @@ void DonationFeed::configure(const DonationCredentials& c) {
             restoreTotalsCache(totals);
             for(const auto& entry:entries){entries_.append(entry);seen_.insert(entry.service+":"+entry.id);}
             bridgeReady_=true;readNotifyDonations();
-            if(!daToken_.isEmpty())connectDA();
+            if(!daToken_.isEmpty()){
+                fetchDAHistory();
+                daLeaseTimer_.start();syncDABridge();
+                if(!usingDABridge_)connectDA();
+            }
             // This timer belongs to DonatePay. A DonationAlerts reconnect changes
             // daEpoch_ independently and must never cancel DonatePay startup.
             if(!dpToken_.isEmpty())dpTimer_.start(350);
@@ -185,7 +226,7 @@ void DonationFeed::configure(const DonationCredentials& c) {
 void DonationFeed::stop() {
     if(cacheTimer_.isActive()){cacheTimer_.stop();saveCache();}
     totalsCacheTimer_.stop();writeTotalsCache();
-    closing_=true;++daEpoch_;++dpEpoch_;daRetry_.stop();dpTimer_.stop();
+    closing_=true;++daEpoch_;++dpEpoch_;daRetry_.stop();daLeaseTimer_.stop();dpTimer_.stop();
     resettingSocket_=true;socket_.abort();resettingSocket_=false;
 }
 void DonationFeed::add(const DonationEntry& entry) {
@@ -273,6 +314,7 @@ void DonationFeed::writeTotalsCache() {
 void DonationFeed::connectDA() {
     donations_telemetry::CpuScope cpu;
     if(closing_||daToken_.isEmpty())return;
+    if(ozk_bridge::hasDAProvider(daToken_)){syncDABridge();return;}
     const quint64 epoch=++daEpoch_;
     auto req=request(QUrl("https://www.donationalerts.com/api/v1/user/oauth"));
     req.setRawHeader("Authorization",("Bearer "+daToken_).toUtf8());
@@ -454,8 +496,10 @@ void DonationFeed::fetchDPHistory(int skip) {
         if(closing_||token!=dpToken_)return;
         const auto response=sn::parseDonatePayReply(code,bytes);
         if(!response.ok){
+            if(response.rateLimited)dpHistoryRateLimits_=std::min(dpHistoryRateLimits_+1,5);
             scheduleDPHistory(skip);return;
         }
+        dpHistoryRateLimits_=0;
         const auto rows=response.rows;
         const int before=dpTotalIds_.size();
         for(const auto& row:rows)if(row.isObject())collectTotal(parseDP(row.toObject()));
@@ -472,7 +516,10 @@ void DonationFeed::scheduleDPHistory(int skip) {
     const QString token=dpToken_;
     // Keep backfill requests off the live polling cadence when Notify owns the
     // account, while preserving a useful pace for stand-alone Donations users.
-    const int delay=ozk_bridge::hasDPProvider(token)?300000:60000;
+    const int regular=ozk_bridge::hasDPProvider(token)?300000:60000;
+    const int delay=dpHistoryRateLimits_?
+        std::max(regular,std::min(1800000,300000*(1<<std::min(dpHistoryRateLimits_-1,3)))):
+        regular;
     QTimer::singleShot(delay,this,[this,token,skip]{
         if(!closing_&&token==dpToken_)fetchDPHistory(skip);
     });

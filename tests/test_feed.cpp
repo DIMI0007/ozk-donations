@@ -70,12 +70,35 @@ struct DonationFeedTest {
         assert(feed.dpTimer_.isActive()&&feed.dpTimer_.interval()==350);
         feed.stop(); // Stop before the standalone fallback timer can send a request.
     }
+    static void daProviderFailover() {
+        DonationFeed feed;feed.daToken_="test-da-provider";feed.bridgeReady_=true;
+        feed.daTotalsStarted_=true;feed.daTotals_.complete=true;
+        ozk_bridge::publishDAProvider("test-da-provider",true);
+        feed.syncDABridge();
+        assert(feed.usingDABridge_&&!feed.daRetry_.isActive());
+        const auto row=QJsonObject{{"id","shared-da-1"},{"username","Test viewer"},
+            {"amount",250},{"currency","RUB"},{"message","Hello"},
+            {"created_at",QDateTime::currentDateTimeUtc().toString(Qt::ISODate)},
+            {"access_token","must-not-cross-bridge"}};
+        ozk_bridge::publishDA("test-da-provider",row);
+        QCoreApplication::processEvents();
+        assert(feed.entries().size()==1&&feed.entries()[0].donor=="Test viewer");
+        assert(feed.totals("DonationAlerts").all.value("RUB")==250);
+        assert(!QCoreApplication::instance()->property(ozk_bridge::daProperty).toByteArray().contains("must-not-cross-bridge"));
+        assert(ozk_bridge::readDA("another-account").isEmpty());
+        DonationFeed late;late.daToken_="test-da-provider";late.bridgeReady_=true;
+        late.syncDABridge();
+        assert(late.entries().size()==1);
+        late.stop();feed.stop();
+        ozk_bridge::clearDAProvider("test-da-provider");
+    }
 };
 
 int main(int argc,char** argv){
     QCoreApplication app(argc,argv);
     DonationFeedTest::bridge();
     DonationFeedTest::providerFailover();
+    DonationFeedTest::daProviderFailover();
     DonationFeedTest::independentStartup();
     const auto converted=convertToRub({{"RUB",100.0},{"USD",2.0}},{{"USD",90.0}});
     assert(converted.complete&&converted.converted&&converted.amount==280.0);

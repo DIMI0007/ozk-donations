@@ -62,7 +62,9 @@ private:
 #endif
     bool eventFilter(QObject* watched,QEvent* event) override;
     void readNotifyDonations();
-    bool bridgeReady_=false,bridgeQueued_=false;
+    void readNotifyDA();
+    void syncDABridge();
+    bool bridgeReady_=false,bridgeQueued_=false,daEventsPending_=false;
     void connectDA();
     void subscribeDA(const QString& client);
     void receiveDA(const QString& text);
@@ -81,7 +83,7 @@ private:
     void setStatus(QString& target,const QString& status);
     QNetworkAccessManager http_;
     QWebSocket socket_;
-    QTimer daRetry_,dpTimer_,cacheTimer_,totalsCacheTimer_;
+    QTimer daRetry_,daLeaseTimer_,dpTimer_,cacheTimer_,totalsCacheTimer_;
     QThreadPool cacheWorker_;
     void writeTotalsCache();
     QString daToken_,dpToken_,daChannel_,daSocketToken_;
@@ -90,8 +92,8 @@ private:
     QVector<DonationEntry> entries_;
     QSet<QString> seen_;
     quint64 daEpoch_=0,dpEpoch_=0;
-    int daFailures_=0,dpFailures_=0;
-    bool closing_=false,resettingSocket_=false;
+    int daFailures_=0,dpFailures_=0,dpHistoryRateLimits_=0;
+    bool closing_=false,resettingSocket_=false,usingDABridge_=false;
     QDateTime startedAt_=QDateTime::currentDateTimeUtc();
     bool daHistoryPermissionNeeded_=false;
     bool daHistoryChecked_=false;
